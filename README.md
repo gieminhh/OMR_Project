@@ -2,7 +2,7 @@
 
 Thank you for the collaboration and support from Ngatran2784
 
-[VIE]
+[VIE] Bản tiếng Việt
 CLI `main.py` vẫn là công cụ nhận diện riêng; `score_result` từ CLI là `None`.
 
 ## Sửa nhận diện phiếu thật — 15/10/2026
@@ -266,7 +266,7 @@ thư mục ghi đè tệp cùng tên; bước dừng sớm không xóa ảnh t�
 - Phase 10: bộ ảnh thật, đo tỷ lệ nhận diện và chỉnh ngưỡng; chỉ nghiệm thu toàn bộ
   sản phẩm sau khi các chức năng trên được triển khai và kiểm thử.
 
-[ENG]
+[ENG] English version
 The CLI `main.py` remains a standalone recognition tool; `score_result` from the CLI is `None`.
 
 ## Fixes for recognizing real answer sheets — 15/10/2026
