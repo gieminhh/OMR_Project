@@ -1,7 +1,7 @@
-# OMR SCANNER — Python/OpenCV, 50 câu
+# OMR SCANNER — Python/OpenCV 
 
-Đã có tiền xử lý, phát hiện phiếu, căn thẳng, đọc đáp án, giao diện Tkinter,
-chấm điểm và xuất Excel qua GUI. Không dùng AI, YOLO hay OCR.
+Thank you for the collaboration and support from Ngatran2784
+
 CLI `main.py` vẫn là công cụ nhận diện riêng; `score_result` từ CLI là `None`.
 
 ## Sửa nhận diện phiếu thật — 15/10/2026
