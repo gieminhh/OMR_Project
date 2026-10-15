@@ -1,0 +1,16 @@
+{
+  "paper_size": [1000, 1400],
+  "answer_region": [120, 250, 930, 1330],
+  "columns": [[200, 300, 440, 1300], [630, 300, 870, 1300]],
+  "rows_per_column": 25,
+  "column_margin": [0, 0],
+  "bubble_radius": 12,
+  "sample_radius_ratio": 0.65,
+  "fill_threshold": 0.45,
+  "threshold_block_size": 51,
+  "threshold_c": 12,
+  "ring_inner_ratio": 0.8,
+  "ring_outer_ratio": 1.2,
+  "min_ring_ink_ratio": 0.25,
+  "min_visible_bubble_fraction": 0.85
+}

@@ -1,0 +1,15 @@
+{
+  "reference_width": 1000,
+  "marker_threshold_ratio": 0.7,
+  "marker_size_range": [12, 28],
+  "marker_min_extent": 0.75,
+  "middle_marker_x_bands": [[0.42, 0.49], [0.50, 0.57]],
+  "outer_marker_x_bands": [[0.07, 0.17], [0.82, 0.92]],
+  "marker_y_band": [0.35, 0.97],
+  "marker_alignment_tolerance": 10,
+  "choice_fractions": [0.32, 0.505, 0.69, 0.875],
+  "bubble_radius": 10,
+  "center_search_radius": 7,
+  "ring_threshold_c": 3,
+  "fill_threshold": 0.45
+}
