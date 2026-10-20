@@ -1,6 +1,8 @@
 """Hồi quy chọn ảnh/nhận kết quả: chạy Tk ẩn, không sửa state người dùng."""
 
 import threading
+import gc
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -9,11 +11,14 @@ from unittest.mock import patch
 import numpy as np
 
 from gui.app import OMRApp, ROOT
-from modules.errors import ImageProcessingError
+from modules.errors import ImageProcessingError, PaperDetectionError
+from modules.image_processing import load_image
 
 
 class GuiTests(unittest.TestCase):
     def setUp(self):
+        # Mỗi test tạo Tcl interpreter riêng; thu hồi interpreter cũ trên main thread.
+        gc.collect()
         for target in ("_restore_state", "_save_state"):
             mock = patch.object(OMRApp, target)
             mock.start()
@@ -145,6 +150,71 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(kind, "scan")
         self.assertIsNone(result)
         self.assertEqual(str(error), "late error")
+
+    def test_remove_background_scan_and_restore_original(self):
+        path = ROOT / "test_images" / "printed_50_real.png"
+        original_bytes = path.read_bytes()
+        self.app._load_image_path(path)
+        self.pump_until(lambda: not self.app._busy)
+        with tempfile.TemporaryDirectory() as folder, patch("gui.app.BACKGROUND_DIR", Path(folder)):
+            self.app._remove_background()
+            self.pump_until(lambda: not self.app._busy)
+            self.assertTrue(self.app._already_warped)
+            self.assertEqual(self.app._original_image_path, path)
+            self.assertNotEqual(self.app._image_path, path)
+            self.assertEqual(load_image(self.app._image_path).shape, (1400, 1000, 3))
+            self.assertEqual(str(self.app._btn_original["state"]), "normal")
+            self.app._run_scan()
+            self.pump_until(lambda: not self.app._busy)
+            self.assertEqual(len(self.app._tree.get_children()), 50)
+            self.assertEqual(self.app._result["answers"][43], "BLANK")
+            self.app._restore_original()
+            self.pump_until(lambda: not self.app._busy)
+            self.assertEqual(self.app._image_path, path)
+            self.assertFalse(self.app._already_warped)
+            self.assertIsNone(self.app._result)
+            self.assertEqual(len(self.app._tree.get_children()), 0)
+            self.assertEqual(path.read_bytes(), original_bytes)
+        self.showerror.assert_not_called()
+
+    def test_background_failure_keeps_original_and_recovers_buttons(self):
+        path = ROOT / "test_images" / "sample_photo.png"
+        self.app._load_image_path(path)
+        self.pump_until(lambda: not self.app._busy)
+        photo = self.app._photo
+        with patch("gui.app.remove_background", side_effect=PaperDetectionError("Không thấy phiếu")):
+            self.app._remove_background()
+            self.pump_until(lambda: not self.app._busy)
+        self.assertEqual(self.app._image_path, path)
+        self.assertIs(self.app._photo, photo)
+        self.assertFalse(self.app._already_warped)
+        self.assertEqual(str(self.app._btn_background["state"]), "normal")
+        self.assertEqual(str(self.app._btn_scan["state"]), "normal")
+        self.assertEqual(self.showerror.call_args.args[0], "Lỗi tách nền")
+
+    def test_background_worker_keeps_ui_responsive(self):
+        self.app._image_path = ROOT / "test_images" / "sample_photo.png"
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        def slow_remove(image):
+            gate.wait(5)
+            raise PaperDetectionError("test")
+        with patch("gui.app.remove_background", side_effect=slow_remove):
+            self.app._remove_background()
+            heartbeat = []
+            self.app.after(10, lambda: heartbeat.append(True))
+            self.pump_until(lambda: bool(heartbeat))
+            self.assertTrue(self.app._busy)
+            self.assertEqual(str(self.app._btn_scan["state"]), "disabled")
+            gate.set()
+            self.pump_until(lambda: not self.app._busy)
+
+    def test_load_new_image_resets_background_mode(self):
+        self.app._already_warped = True
+        self.app._load_image_path(ROOT / "test_images" / "sample_photo.png")
+        self.pump_until(lambda: not self.app._busy)
+        self.assertFalse(self.app._already_warped)
+        self.assertEqual(str(self.app._btn_background["state"]), "normal")
 
 
 if __name__ == "__main__":
