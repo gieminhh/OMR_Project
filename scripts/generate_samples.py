@@ -13,7 +13,6 @@ import numpy as np
 from modules.image_processing import save_image
 
 ROOT = Path(__file__).resolve().parents[1]
-SAMPLE_SIZE = (1000, 1400)
 SAMPLE_CORNERS = np.array([[160, 100], [1130, 170], [1200, 1580], [90, 1500]], np.float32)
 
 

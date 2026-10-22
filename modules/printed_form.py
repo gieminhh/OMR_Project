@@ -44,10 +44,10 @@ def detect_printed_layout(image: np.ndarray) -> AnswerConfig | None:
                 markers.append((x + w / 2, y + h / 2))
     bands = profile["middle_marker_x_bands"]
     ymin, ymax = np.array(profile["marker_y_band"]) * height
-    groups = [np.array(sorted(
-        [p for p in markers if xmin * width < p[0] < xmax * width and ymin < p[1] < ymax],
-        key=lambda p: p[1],
-    )) for xmin, xmax in bands]
+    groups = []
+    for xmin, xmax in bands:
+        group = [point for point in markers if xmin * width < point[0] < xmax * width and ymin < point[1] < ymax]
+        groups.append(np.array(sorted(group, key=lambda point: point[1])))
     if min(map(len, groups)) < 3:
         return None
     if any(len(group) != 6 for group in groups):
@@ -75,10 +75,11 @@ def detect_printed_layout(image: np.ndarray) -> AnswerConfig | None:
             block, offset = divmod(row, 5)
             fraction = (offset + .5) / 5
             anchor = group[block] * (1 - fraction) + group[block + 1] * fraction
-            centers.append(tuple((
-                round(anchor[0] + (position - (1 if column == 0 else 0)) * spans[column]),
-                round(anchor[1]),
-            ) for position in profile["choice_fractions"]))
+            row_centers = []
+            for position in profile["choice_fractions"]:
+                x = round(anchor[0] + (position - (1 if column == 0 else 0)) * spans[column])
+                row_centers.append((x, round(anchor[1])))
+            centers.append(tuple(row_centers))
     radius = round(profile["bubble_radius"] * scale)
     search = round(profile["center_search_radius"] * scale)
     points = np.asarray(centers)
@@ -88,7 +89,7 @@ def detect_printed_layout(image: np.ndarray) -> AnswerConfig | None:
     region = (max(0, int(min_x)), max(0, int(min_y)), min(width, int(max_x)), min(height, int(max_y)))
     columns = []
     for block in (points[:25], points[25:]):
-        xs, ys = block[..., 0], block[..., 1]
+        xs = block[..., 0]
         columns.append((int(xs.min() - 20 * scale), region[1], int(xs.max() + 20 * scale), region[3]))
     config = replace(
         AnswerConfig(), paper_size=(width, height), answer_region=region, columns=tuple(columns),

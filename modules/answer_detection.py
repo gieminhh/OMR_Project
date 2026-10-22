@@ -143,10 +143,16 @@ def bubble_centers(config: AnswerConfig) -> list[list[tuple[int, int]]]:
 
 def classify_ratios(ratios: list[float], fill_threshold: float) -> str:
     """Không ép chọn đáp án khi chưa tô hoặc có nhiều ô vượt ngưỡng."""
-    selected = [label for label, ratio in zip(CHOICES, ratios) if ratio >= fill_threshold]
-    if not selected:
+    selected = []
+    for label, ratio in zip(CHOICES, ratios):
+        if ratio >= fill_threshold:
+            selected.append(label)
+
+    if len(selected) == 0:
         return "BLANK"
-    return selected[0] if len(selected) == 1 else "MULTIPLE"
+    if len(selected) == 1:
+        return selected[0]
+    return "MULTIPLE"
 
 
 def analyze_answers(
@@ -165,16 +171,19 @@ def analyze_answers(
     if type(question_count) is not int or question_count not in (5, 10, QUESTION_COUNT):
         raise AnswerDetectionError("question_count chỉ nhận 5, 10 hoặc 50; mặc định là 50.")
     gray = to_grayscale(warped_image)
+    blurred = apply_blur(gray)
     try:
-        binary = apply_threshold(apply_blur(gray), block_size=config.threshold_block_size, c=config.threshold_c)
+        binary = apply_threshold(blurred, block_size=config.threshold_block_size, c=config.threshold_c)
     except ImageProcessingError as exc:
         raise AnswerDetectionError(f"Không nhị phân hóa được vùng đáp án: {exc}") from exc
     x0, y0, x1, y1 = config.answer_region
     cropped = warped_image[y0:y1, x0:x1].copy()
     binary_region = binary[y0:y1, x0:x1]
-    ring_binary = binary if config.ring_threshold_c is None else apply_threshold(
-        apply_blur(gray), block_size=config.threshold_block_size, c=config.ring_threshold_c
-    )
+    ring_binary = binary
+    if config.ring_threshold_c is not None:
+        ring_binary = apply_threshold(
+            blurred, block_size=config.threshold_block_size, c=config.ring_threshold_c
+        )
     ring_region = ring_binary[y0:y1, x0:x1]
     annotated = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
     radius = config.bubble_radius

@@ -1,5 +1,9 @@
 """Hồi quy chọn ảnh/nhận kết quả: chạy Tk ẩn, không sửa state người dùng."""
 
+import os
+import subprocess
+import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -8,11 +12,64 @@ from unittest.mock import patch
 
 import numpy as np
 
-from gui.app import OMRApp, ROOT
+from gui.app import OMRApp, ROOT, _load_json, _save_json
 from modules.errors import ImageProcessingError
 
 
 class GuiTests(unittest.TestCase):
+    def run(self, result=None):
+        if os.environ.get("OMR_GUI_TEST_SUBPROCESS") == "1":
+            return super().run(result)
+
+        if result is None:
+            result = self.defaultTestResult()
+        result.startTest(self)
+
+        env = os.environ.copy()
+        env["OMR_GUI_TEST_SUBPROCESS"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
+        try:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "unittest",
+                    "discover",
+                    "-s",
+                    "tests",
+                    "-p",
+                    "test_gui.py",
+                    "-k",
+                    self._testMethodName,
+                    "-v",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+                check=False,
+            )
+            if completed.returncode == 0:
+                result.addSuccess(self)
+            else:
+                error = AssertionError(completed.stdout + completed.stderr)
+                try:
+                    raise error
+                except AssertionError:
+                    result.addFailure(self, sys.exc_info())
+        except subprocess.TimeoutExpired:
+            error = AssertionError("GUI test timed out after 120 seconds")
+            try:
+                raise error
+            except AssertionError:
+                result.addFailure(self, sys.exc_info())
+        finally:
+            result.stopTest(self)
+        return result
+
     def setUp(self):
         for target in ("_restore_state", "_save_state"):
             mock = patch.object(OMRApp, target)
@@ -55,7 +112,7 @@ class GuiTests(unittest.TestCase):
         gate = threading.Event()
         self.addCleanup(gate.set)
         image = np.full((1200, 900, 3), 255, np.uint8)
-        def slow_load(path):
+        def slow_load(_):
             gate.wait(5)
             return image
         heartbeat = []
@@ -85,6 +142,7 @@ class GuiTests(unittest.TestCase):
         self.app._run_scan()
         self.pump_until(lambda: not self.app._busy)
         self.assertEqual(len(self.app._tree.get_children()), 50)
+        assert self.app._score_result is not None
         self.assertEqual(self.app._score_result["score"], 10)
         self.assertEqual(str(self.app._btn_scan["state"]), "normal")
         self.assertEqual(str(self.app._btn_excel["state"]), "normal")
@@ -108,6 +166,7 @@ class GuiTests(unittest.TestCase):
         rows = self.app._tree.get_children()
         self.assertEqual(len(rows), 50)
         self.assertEqual(self.app._tree.item(rows[43], "values")[1], "BLANK")
+        assert self.app._result is not None
         self.assertEqual(self.app._result["layout_name"], "printed_50")
         self.showerror.assert_not_called()
 
@@ -145,6 +204,24 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(kind, "scan")
         self.assertIsNone(result)
         self.assertEqual(str(error), "late error")
+
+
+class JsonStateTests(unittest.TestCase):
+    def test_missing_state_uses_default(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(_load_json(Path(folder) / "missing.json", {}), {})
+
+    def test_invalid_json_and_write_failure_are_reported(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.json"
+            path.write_text("{", encoding="utf-8")
+            with self.assertRaisesRegex(OSError, "Không đọc được"):
+                _load_json(path, {})
+
+            blocker = Path(folder) / "not_a_directory"
+            blocker.write_text("file", encoding="utf-8")
+            with self.assertRaisesRegex(OSError, "Không ghi được"):
+                _save_json(blocker / "state.json", {})
 
 
 if __name__ == "__main__":

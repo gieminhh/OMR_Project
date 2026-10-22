@@ -76,7 +76,7 @@ def _cv2_to_photoimage(bgr: np.ndarray, max_w: int, max_h: int):
         return None
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
     img = Image.fromarray(rgb)
-    img.thumbnail((max_w, max_h), Image.LANCZOS)
+    img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
     return ImageTk.PhotoImage(img)
 
 
@@ -92,20 +92,21 @@ def _btn(parent, text, cmd, bg=COLOR_BTN, width=18, **kw):
     )
 
 
-def _load_json_safe(path: Path, default):
+def _load_json(path: Path, default):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except FileNotFoundError:
         return default
+    except (OSError, json.JSONDecodeError) as exc:
+        raise OSError(f"Không đọc được tệp {path}: {exc}") from exc
 
 
-def _save_json_safe(path: Path, data) -> bool:
+def _save_json(path: Path, data) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        return True
-    except Exception:
-        return False
+    except OSError as exc:
+        raise OSError(f"Không ghi được tệp {path}: {exc}") from exc
 
 
 # ─── Dialog nhập đáp án chuẩn ────────────────────────────────────────────────
@@ -157,7 +158,7 @@ class AnswerKeyDialog(tk.Toplevel):
         inner = tk.Frame(canvas, bg=COLOR_BG)
         win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
 
-        def _on_configure(event):
+        def _on_configure(_):
             canvas.configure(scrollregion=canvas.bbox("all"))
             canvas.itemconfig(win_id, width=canvas.winfo_width())
         inner.bind("<Configure>", _on_configure)
@@ -574,14 +575,14 @@ class OMRApp(tk.Tk):
         self._tree = ttk.Treeview(tbl_frame, columns=cols,
                                   show="headings", selectmode="browse", height=26)
         cfg = [
-            ("question", "Câu",          60,  "center"),
-            ("student",  "Đáp án HS",   110, "center"),
-            ("correct",  "Đáp án đúng", 110, "center"),
-            ("result",   "Kết quả",     170, "center"),
+            ("question", "Câu",          60),
+            ("student",  "Đáp án HS",   110),
+            ("correct",  "Đáp án đúng", 110),
+            ("result",   "Kết quả",     170),
         ]
-        for cid, heading, w, anchor in cfg:
+        for cid, heading, w in cfg:
             self._tree.heading(cid, text=heading)
-            self._tree.column(cid, width=w, anchor=anchor, stretch=True)
+            self._tree.column(cid, width=w, anchor="center", stretch=True)
 
         self._tree.tag_configure("correct",  background=COLOR_CORRECT)
         self._tree.tag_configure("wrong",    background=COLOR_WRONG)
@@ -613,7 +614,11 @@ class OMRApp(tk.Tk):
     def _restore_state(self):
         """Đọc đáp án chuẩn và đường dẫn ảnh từ lần dùng trước."""
         # 1. Đáp án chuẩn
-        key_data = _load_json_safe(LAST_KEY_PATH, None)
+        try:
+            key_data = _load_json(LAST_KEY_PATH, None)
+        except OSError as exc:
+            key_data = None
+            messagebox.showwarning("Không đọc được đáp án đã lưu", str(exc), parent=self)
         if isinstance(key_data, dict) and "answers" in key_data:
             answers = key_data["answers"]
         elif isinstance(key_data, list):
@@ -628,7 +633,11 @@ class OMRApp(tk.Tk):
             self._answer_key = None
 
         # 2. Đường dẫn ảnh cuối
-        state = _load_json_safe(APP_STATE_PATH, {})
+        try:
+            state = _load_json(APP_STATE_PATH, {})
+        except OSError as exc:
+            state = {}
+            messagebox.showwarning("Không đọc được trạng thái ứng dụng", str(exc), parent=self)
         self._refresh_ui()
         last_image = state.get("last_image_path") if isinstance(state, dict) else None
         if isinstance(last_image, str) and last_image:
@@ -636,12 +645,18 @@ class OMRApp(tk.Tk):
 
     def _save_state(self):
         """Lưu đáp án chuẩn và đường dẫn ảnh hiện tại."""
-        if self._answer_key:
-            _save_json_safe(LAST_KEY_PATH, {"answers": self._answer_key})
-        state = {}
-        if self._image_path:
-            state["last_image_path"] = str(self._image_path)
-        _save_json_safe(APP_STATE_PATH, state)
+        try:
+            if self._answer_key:
+                _save_json(LAST_KEY_PATH, {"answers": self._answer_key})
+            state = {}
+            if self._image_path:
+                state["last_image_path"] = str(self._image_path)
+            _save_json(APP_STATE_PATH, state)
+            return True
+        except OSError as exc:
+            self._set_status(f"⚠ Không lưu được trạng thái: {exc}", "#C05000")
+            messagebox.showwarning("Không lưu được trạng thái", str(exc), parent=self)
+            return False
 
     # ── Cập nhật UI ───────────────────────────────────────────────────────────
 
@@ -659,7 +674,7 @@ class OMRApp(tk.Tk):
         self._btn_excel.configure(state="normal" if self._score_result and not self._busy else "disabled")
 
         # Thông tin ảnh
-        if has_img:
+        if self._image_path is not None:
             self._lbl_info.configure(text=str(self._image_path.name))
         else:
             self._lbl_info.configure(text="Chưa chọn ảnh")
@@ -743,8 +758,8 @@ class OMRApp(tk.Tk):
                     path, preview = payload
                     self._show_image(preview)
                     self._image_path = path
-                    self._save_state()
-                    self._set_status(f"📂 Đã tải ảnh: {path.name}. Nhấn Đọc phiếu để nhận diện.")
+                    if self._save_state():
+                        self._set_status(f"📂 Đã tải ảnh: {path.name}. Nhấn Đọc phiếu để nhận diện.")
                 else:
                     self._on_scan_done(payload, None)
             except Exception as exc:
@@ -800,9 +815,9 @@ class OMRApp(tk.Tk):
         try:
             key = load_answer_key(path)
             self._answer_key = key
-            self._save_state()
             self._refresh_ui()
-            self._set_status(f"✅ Đã load đáp án chuẩn từ: {Path(path).name}", "#107C41")
+            if self._save_state():
+                self._set_status(f"✅ Đã load đáp án chuẩn từ: {Path(path).name}", "#107C41")
         except (ScoringError, OMRError) as exc:
             messagebox.showerror("Lỗi đáp án chuẩn", str(exc))
 
@@ -811,9 +826,9 @@ class OMRApp(tk.Tk):
         dlg = AnswerKeyDialog(self, self._answer_key)
         if dlg.answers is not None:
             self._answer_key = dlg.answers
-            self._save_state()
             self._refresh_ui()
-            self._set_status("✅ Đáp án chuẩn đã được lưu tự động.", "#107C41")
+            if self._save_state():
+                self._set_status("✅ Đáp án chuẩn đã được lưu tự động.", "#107C41")
 
     def _save_key_to_file(self):
         if not self._answer_key:
@@ -825,8 +840,12 @@ class OMRApp(tk.Tk):
             filetypes=[("JSON", "*.json")],
         )
         if path:
-            _save_json_safe(Path(path), {"answers": self._answer_key})
-            self._set_status(f"✅ Đã lưu đáp án ra: {Path(path).name}", "#107C41")
+            try:
+                _save_json(Path(path), {"answers": self._answer_key})
+            except OSError as exc:
+                messagebox.showerror("Lỗi lưu đáp án", str(exc), parent=self)
+            else:
+                self._set_status(f"✅ Đã lưu đáp án ra: {Path(path).name}", "#107C41")
 
     def _run_scan(self):
         if not self._image_path or self._busy:
@@ -1018,6 +1037,7 @@ def launch_app() -> None:
 
 if __name__ == "__main__":
     for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8")
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8")
     launch_app()
