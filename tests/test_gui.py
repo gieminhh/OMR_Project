@@ -6,7 +6,6 @@ import sys
 import tempfile
 import threading
 import gc
-import tempfile
 import time
 import unittest
 from pathlib import Path

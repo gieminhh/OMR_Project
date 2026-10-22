@@ -102,9 +102,10 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-Lệnh cuối hiển thị hướng dẫn, chưa mở GUI. Môi trường `.venv` trong thư mục
-đã được cài và kiểm thử với Python 3.14.4 trên Windows. Không cần kích hoạt
-venv hay đổi PowerShell execution policy khi dùng đường dẫn trên.
+Lệnh cuối hiển thị hướng dẫn, chưa mở GUI. Thư mục `.venv` không được đưa lên
+Git; hãy tạo môi trường theo các lệnh trên. Project đã được kiểm thử với
+Python 3.14.4 trên Windows. Không cần kích hoạt venv hay đổi PowerShell
+execution policy khi dùng đường dẫn trên.
 
 Chạy ví dụ có sẵn:
 
@@ -315,6 +316,50 @@ thư mục ghi đè tệp cùng tên; bước dừng sớm không xóa ảnh t�
 [ENG] English version
 The CLI `main.py` remains a standalone recognition tool; `score_result` from the CLI is `None`.
 
+## Resizable windows — 20/10/2026
+
+The toolbar, content area, and bottom bar use separate rows. Only the image and
+answer table expand; the **Export Excel** button stays visible. Long image names
+and status text wrap instead of pushing controls out of the window. The main
+window opens at a screen-aware size, the preview fits its available area, and
+only the answer table scrolls to show all 50 questions. The camera window is
+resizable too, with its capture, background-removal, and use-image buttons kept
+outside the expanding preview.
+
+Layout checks: `python -m unittest tests.test_layout -v`. The main window was
+checked down to 780 × 500 and the camera window down to 600 × 460 using Tk
+widget geometry; test camera frames are simulated, so verify with a real webcam.
+
+## Remove the background from the preview — 20/10/2026
+
+- **Camera:** choose **Chụp** (Capture) → **Tách nền** (Remove Background) →
+  **Dùng ảnh** (Use Image) → **Đọc phiếu** (Read Sheet). Choose **Ảnh gốc**
+  (Original Image) to undo or **Chụp lại** (Retake) to capture another frame.
+- **Existing image:** choose **Chọn ảnh** (Select Image), then **Tách nền**
+  (Remove Background) above the preview. Inspect the result, then choose
+  **Đọc phiếu** (Read Sheet).
+- Background removal detects the four paper corners, crops the area outside the
+  sheet, and rectifies it to 1000 × 1400. It does not erase marks or produce an
+  alpha background.
+- Processing runs in a worker thread. If detection fails, the app reports the
+  error and keeps the current image so you can retry or capture another one.
+- The source image is not overwritten. Rectified files from selected images are
+  saved under `output/background_removed/`; camera captures and their originals
+  are under `output/camera/`. These generated working files are excluded from Git.
+- The app remembers whether an image is already rectified, including after
+  restart, and skips paper detection when reading it. Selecting another image
+  resets that state.
+
+The algorithm is in `modules/background_removal.py`; the GUI calls it and
+displays the result. Complex backgrounds, curved paper, or missing corners can
+still prevent detection; this preview step does not remove the recognition
+limitations below.
+
+```powershell
+.\.venv\Scripts\python.exe run_gui.py
+.\.venv\Scripts\python.exe -m unittest tests.test_background_removal tests.test_gui -v
+```
+
 ## Fixes for recognizing real answer sheets — 15/10/2026
 
 The image `test_images/printed_50_real.png` was previously incorrectly reported as having a cropped corner, even though the entire sheet was visible. Two causes were confirmed:
@@ -351,7 +396,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-The last command displays the CLI instructions; it does not open the GUI. The `.venv` environment in the project directory has already been installed and tested with Python 3.14.4 on Windows. You do not need to activate the virtual environment or change the PowerShell execution policy when using the paths shown above.
+The last command displays the CLI instructions; it does not open the GUI. The `.venv` directory is not included in Git; create it using the commands above. The project has been tested with Python 3.14.4 on Windows. You do not need to activate the virtual environment or change the PowerShell execution policy when using the paths shown above.
 
 Run the included examples:
 
@@ -365,7 +410,7 @@ Result: reads 50 answers using the repeating A/B/C/D pattern in the sample, and 
 `test_images/expected_answers.json` contains the expected results for the development sample.
 `answer_key/answer_key.json` is also an **illustrative answer key**, not the actual answer key for an exam.
 
-On macOS/Linux, use `.venv/bin/python` instead of `\.venv\Scripts\python.exe`.
+On macOS/Linux, use `.venv/bin/python` instead of `.\.venv\Scripts\python.exe`.
 The program's default paths are calculated from `__file__` using pathlib, rather than being tied to a drive or Windows username.
 
 ## Project structure

@@ -813,14 +813,22 @@ class OMRApp(tk.Tk):
             self._load_image_path(Path(last_image), already_warped=state.get("already_warped") is True,
                                   original_path=Path(original) if isinstance(original, str) and original else None)
 
-    def _save_state(self):
+    def _save_state(self) -> bool:
         """Lưu đáp án chuẩn và đường dẫn ảnh hiện tại."""
-        if self._answer_key:
-            _save_json_safe(LAST_KEY_PATH, {"answers": self._answer_key})
-        state = {}
-        if self._image_path:
-            state["last_image_path"] = str(self._image_path)
-        _save_json_safe(APP_STATE_PATH, state)
+        try:
+            if self._answer_key:
+                _save_json(LAST_KEY_PATH, {"answers": self._answer_key})
+            state = {}
+            if self._image_path:
+                state["last_image_path"] = str(self._image_path)
+                state["already_warped"] = self._already_warped
+            if self._original_image_path:
+                state["original_image_path"] = str(self._original_image_path)
+            _save_json(APP_STATE_PATH, state)
+        except OSError as exc:
+            messagebox.showerror("Lỗi lưu trạng thái", str(exc), parent=self)
+            return False
+        return True
 
     # ── Cập nhật UI ───────────────────────────────────────────────────────────
 
@@ -957,10 +965,23 @@ class OMRApp(tk.Tk):
                     path, preview, already_warped, original_path = payload
                     self._show_image(preview)
                     self._image_path = path
+                    self._original_image_path = original_path
+                    self._already_warped = already_warped
                     self._save_state()
                     self._set_status(f"📂 Đã tải ảnh: {path.name}. Nhấn Đọc phiếu để nhận diện.")
-                else:
+                elif kind == "background":
+                    path, preview = payload
+                    self._show_image(preview)
+                    self._original_image_path = self._image_path
+                    self._image_path = path
+                    self._already_warped = True
+                    self._reset_results()
+                    self._save_state()
+                    self._set_status("✅ Đã tách nền và căn thẳng phiếu. Nhấn Đọc phiếu để nhận diện.")
+                elif kind == "scan":
                     self._on_scan_done(payload, None)
+                else:
+                    raise RuntimeError(f"Loại kết quả worker không được hỗ trợ: {kind}")
             except Exception as exc:
                 if kind != "background":
                     self._reset_results()
