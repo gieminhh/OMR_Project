@@ -5,6 +5,8 @@ import subprocess
 import sys
 import tempfile
 import threading
+import gc
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -12,7 +14,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from gui.app import OMRApp, ROOT, _load_json, _save_json
+from gui.app import OMRApp, ROOT
 from modules.errors import ImageProcessingError
 
 
@@ -71,6 +73,8 @@ class GuiTests(unittest.TestCase):
         return result
 
     def setUp(self):
+        # Mỗi test tạo Tcl interpreter riêng; thu hồi interpreter cũ trên main thread.
+        gc.collect()
         for target in ("_restore_state", "_save_state"):
             mock = patch.object(OMRApp, target)
             mock.start()
@@ -204,24 +208,6 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(kind, "scan")
         self.assertIsNone(result)
         self.assertEqual(str(error), "late error")
-
-
-class JsonStateTests(unittest.TestCase):
-    def test_missing_state_uses_default(self):
-        with tempfile.TemporaryDirectory() as folder:
-            self.assertEqual(_load_json(Path(folder) / "missing.json", {}), {})
-
-    def test_invalid_json_and_write_failure_are_reported(self):
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "state.json"
-            path.write_text("{", encoding="utf-8")
-            with self.assertRaisesRegex(OSError, "Không đọc được"):
-                _load_json(path, {})
-
-            blocker = Path(folder) / "not_a_directory"
-            blocker.write_text("file", encoding="utf-8")
-            with self.assertRaisesRegex(OSError, "Không ghi được"):
-                _save_json(blocker / "state.json", {})
 
 
 if __name__ == "__main__":

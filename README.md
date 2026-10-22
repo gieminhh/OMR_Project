@@ -5,6 +5,50 @@ Thank you for the collaboration and support from Ngatran2784
 [VIE] Bản tiếng Việt
 CLI `main.py` vẫn là công cụ nhận diện riêng; `score_result` từ CLI là `None`.
 
+## Bố cục cửa sổ co giãn — 20/10/2026
+
+Thanh công cụ, vùng nội dung và thanh dưới cùng được đặt ở ba hàng riêng.
+Chỉ phần ảnh/bảng đáp án co giãn; nút **Xuất Excel** luôn có chỗ ở cuối cửa sổ.
+Thanh công cụ chia thành dòng thông tin và dòng thao tác để các nút không bị
+đẩy ra ngoài khi tên ảnh dài. Thông báo và thống kê tự xuống dòng.
+
+Cửa sổ mở với kích thước phù hợp màn hình, chừa chỗ cho thanh hệ thống.
+Ảnh preview thu nhỏ theo khung thực tế; chỉ cuộn trong bảng để xem đủ 50 câu.
+Cửa sổ camera cũng có thể đổi kích thước, các nút chụp/tách nền/dùng ảnh luôn
+nằm ngoài vùng ảnh co giãn. Đã kiểm tra bố cục cửa sổ chính đến 780 × 500 và
+camera đến 600 × 460 bằng vị trí/kích thước widget thực tế của Tk.
+
+Chạy kiểm thử bố cục: `python -m unittest tests.test_layout -v`.
+
+## Tách nền ngay khi xem ảnh — 20/10/2026
+
+- **Ảnh camera:** nhấn **Chụp → Tách nền → Dùng ảnh → Đọc phiếu**.
+  Có thể chọn **Ảnh gốc** để hoàn tác hoặc **Chụp lại** để lấy ảnh mới.
+- **Ảnh trong máy:** nhấn **Chọn ảnh → Tách nền** ở phía trên khung xem
+  ảnh, kiểm tra kết quả rồi nhấn **Đọc phiếu**.
+- “Tách nền” ở đây là tìm bốn góc, bỏ vùng bên ngoài tờ giấy và căn thẳng
+  phiếu về 1000 × 1400. Không xóa chữ/nét tô trong phiếu và không xuất nền alpha.
+- Xử lý chạy trong thread nền, có thông báo đang xử lý. Nếu không tìm được
+  phiếu, app hiển thị lỗi và giữ ảnh hiện tại để thử lại/chụp lại.
+- Ảnh gốc không bị ghi đè. Bản đã tách từ ảnh chọn lưu riêng ở
+  `output/background_removed/`; ảnh camera và bản gốc ở `output/camera/`.
+  Đây là tệp làm việc tự sinh, đã được loại khỏi Git.
+- Chương trình nhớ ảnh nào đã căn thẳng, kể cả khi mở lại app, và bỏ qua
+  bước tìm viền lần hai khi đọc đáp án. Chọn ảnh mới sẽ reset trạng thái này.
+
+Thuật toán ở `modules/background_removal.py`, GUI chỉ gọi hàm và hiển thị.
+Nền phức tạp, giấy cong hoặc mất góc vẫn có thể khiến không tách được phiếu;
+nút này đưa bước căn thẳng ra màn hình xem trước, không thay thế giới hạn
+nhận diện đã nêu bên dưới.
+
+```powershell
+.\.venv\Scripts\python.exe run_gui.py
+.\.venv\Scripts\python.exe -m unittest tests.test_background_removal tests.test_gui -v
+```
+
+Kiểm thử camera dùng frame mô phỏng từ ảnh thật; cần thử thêm với webcam thực
+tế của người dùng để kiểm chứng chất lượng ảnh chụp và driver camera.
+
 ## Sửa nhận diện phiếu thật — 15/10/2026
 
 Ảnh `test_images/printed_50_real.png` từng bị báo nhầm là crop mất góc dù thấy

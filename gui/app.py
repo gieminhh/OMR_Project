@@ -2,6 +2,7 @@
 
 Tính năng:
   - Load ảnh từ file hoặc chụp trực tiếp từ webcam (CameraDialog).
+  - Tách nền/căn thẳng ở màn hình xem trước, có thể quay lại ảnh gốc.
   - Dialog nhập/chỉnh đáp án chuẩn ngay trong GUI (50 câu × A/B/C/D).
   - Tự lưu đáp án chuẩn vào config/last_answer_key.json và tự load lại khi mở app.
   - Tự lưu đường dẫn ảnh/key cuối cùng vào config/app_state.json.
@@ -23,6 +24,7 @@ import threading
 import tkinter as tk
 from pathlib import Path
 from queue import Empty, Queue
+from uuid import uuid4
 from tkinter import filedialog, messagebox, ttk
 
 import cv2
@@ -34,7 +36,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from modules.errors import OMRError
-from modules.image_processing import load_image, resize_image
+from modules.image_processing import load_image, resize_image, save_image
+from modules.background_removal import remove_background
 from modules.export_excel import ExportError, export_excel
 from modules.scoring import ScoringError, load_answer_key, score_answers
 from modules.validation import validate_answers
@@ -49,6 +52,8 @@ except ImportError:
 CONFIG_DIR        = ROOT / "config"
 LAST_KEY_PATH     = CONFIG_DIR / "last_answer_key.json"   # đáp án chuẩn cuối cùng
 APP_STATE_PATH    = CONFIG_DIR / "app_state.json"         # lưu trạng thái app
+BACKGROUND_DIR    = ROOT / "output" / "background_removed"
+CAMERA_DIR        = ROOT / "output" / "camera"
 
 # ─── Hằng số giao diện ────────────────────────────────────────────────────────
 APP_TITLE      = "OMR Scanner — Đọc phiếu trắc nghiệm"
@@ -90,6 +95,15 @@ def _btn(parent, text, cmd, bg=COLOR_BTN, width=18, **kw):
         activebackground="#1a5a9a", activeforeground="white",
         **kw,
     )
+
+
+def _fit_window(window, preferred: tuple[int, int], minimum: tuple[int, int]):
+    """Chọn kích thước mở cửa sổ vừa màn hình, chừa chỗ cho thanh hệ thống."""
+    available_w = max(320, window.winfo_screenwidth() - 48)
+    available_h = max(320, window.winfo_screenheight() - 112)
+    width, height = min(preferred[0], available_w), min(preferred[1], available_h)
+    window.geometry(f"{width}x{height}")
+    window.minsize(min(minimum[0], available_w), min(minimum[1], available_h))
 
 
 def _load_json(path: Path, default):
@@ -228,7 +242,8 @@ class CameraDialog(tk.Toplevel):
       - Thread nền mở cv2.VideoCapture rồi báo về main thread.
       - Main thread poll frame qua after(33ms) → hiển thị lên Canvas ~30fps.
       - Người dùng nhấn [📷 Chụp] → frame đóng băng, live feed dừng.
-      - Nhấn [✅ Dùng ảnh này] → lưu JPEG vào output/camera/ rồi trả Path.
+      - Có thể [Tách nền] / [Ảnh gốc] trước khi dùng ảnh.
+      - Nhấn [✅ Dùng ảnh] → lưu PNG vào output/camera/ rồi trả Path.
       - Nhấn [🔄 Chụp lại]    → tiếp tục live feed.
     """
 
@@ -238,7 +253,8 @@ class CameraDialog(tk.Toplevel):
     def __init__(self, parent, cam_index: int = 0):
         super().__init__(parent)
         self.title("📷  Chụp ảnh từ camera")
-        self.resizable(False, False)
+        self.resizable(True, True)
+        _fit_window(self, (760, 720), (600, 460))
         self.grab_set()
         self.configure(bg=COLOR_BG)
 
@@ -248,7 +264,15 @@ class CameraDialog(tk.Toplevel):
         self._frozen = False
         self._frozen_frame: np.ndarray | None = None
         self._photo = None
+        self._preview_frame = None
         self._result_path: Path | None = None
+        self._original_path: Path | None = None
+        self._original_frame: np.ndarray | None = None
+        self._background_removed = False
+        self._background_busy = False
+        self._background_queue = Queue()
+        self._background_poll_id = None
+        self._closed = False
 
         self._build()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -263,19 +287,31 @@ class CameraDialog(tk.Toplevel):
         """Đường dẫn file ảnh đã chụp, hoặc None nếu huỷ."""
         return self._result_path
 
+    @property
+    def original_path(self) -> Path | None:
+        """Bản gốc ảnh chụp, dùng để hoàn tác tách nền ở cửa sổ chính."""
+        return self._original_path
+
+    @property
+    def background_removed(self) -> bool:
+        """Ảnh được chọn đã tách nền và căn thẳng hay chưa."""
+        return self._background_removed
+
     # ── Giao diện ─────────────────────────────────────────────────────────────
 
     def _build(self):
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(2, weight=1)
         # Header
         tk.Label(self,
                  text="  📷  Đưa phiếu vào khung hình — đủ 4 góc — rồi nhấn Chụp",
                  bg=COLOR_TOOLBAR, fg="white",
                  font=("Segoe UI", 11, "bold"), pady=8,
-                 anchor="w").pack(fill="x")
+                 anchor="w", wraplength=560).grid(row=0, column=0, sticky="ew")
 
         # Chọn camera index
         sel_bar = tk.Frame(self, bg=COLOR_BG)
-        sel_bar.pack(fill="x", padx=10, pady=(6, 2))
+        sel_bar.grid(row=1, column=0, sticky="ew", padx=10, pady=(6, 2))
         tk.Label(sel_bar, text="Camera:", bg=COLOR_BG,
                  font=("Segoe UI", 9, "bold")).pack(side="left")
         self._cam_var = tk.IntVar(value=self._cam_index)
@@ -287,49 +323,73 @@ class CameraDialog(tk.Toplevel):
 
         # Canvas live feed
         self._canvas = tk.Canvas(self,
-                                 width=self.PREVIEW_W, height=self.PREVIEW_H,
+                                 width=1, height=1,
                                  bg="#111", highlightthickness=0)
-        self._canvas.pack(padx=10, pady=4)
+        self._canvas.grid(row=2, column=0, sticky="nsew", padx=10, pady=4)
+        self._canvas.bind("<Configure>", self._resize_camera_preview)
         self._placeholder_id = self._canvas.create_text(
             self.PREVIEW_W // 2, self.PREVIEW_H // 2,
             text="Đang kết nối camera…",
             fill="#88BBDD", font=("Segoe UI", 13))
 
+        edit_bar = tk.Frame(self, bg=COLOR_BG)
+        edit_bar.grid(row=3, column=0, sticky="ew", padx=10, pady=4)
+        edit_bar.columnconfigure(2, weight=1)
+        self._btn_background = _btn(edit_bar, "Tách nền", self._remove_background,
+                                    width=0, state="disabled")
+        self._btn_background.grid(row=0, column=0, padx=4, sticky="ew")
+        self._btn_original = _btn(edit_bar, "Ảnh gốc", self._restore_original,
+                                  width=0, bg="#5B5EA6", state="disabled")
+        self._btn_original.grid(row=0, column=1, padx=4, sticky="ew")
+        self._lbl_background = tk.Label(edit_bar, text="Chụp ảnh để tách nền và căn thẳng phiếu.",
+                                        bg=COLOR_BG, font=("Segoe UI", 9), width=1, wraplength=280)
+        self._lbl_background.grid(row=0, column=2, padx=6, sticky="ew")
+        self._lbl_background.bind("<Configure>", lambda e: self._lbl_background.configure(wraplength=max(1, e.width)))
+
         # Thanh nút
         btn_bar = tk.Frame(self, bg=COLOR_BG)
-        btn_bar.pack(fill="x", padx=10, pady=8)
+        btn_bar.grid(row=4, column=0, sticky="ew", padx=10, pady=8)
+        for column in range(4):
+            btn_bar.columnconfigure(column, weight=1, uniform="camera_actions")
 
         self._btn_capture = _btn(btn_bar, "📷  Chụp", self._capture,
-                                 bg="#C05000", width=14)
-        self._btn_capture.pack(side="left", padx=4)
+                                 bg="#C05000", width=0)
+        self._btn_capture.grid(row=0, column=0, sticky="ew", padx=4)
 
         self._btn_retake = _btn(btn_bar, "🔄  Chụp lại", self._retake,
-                                bg="#5B5EA6", width=14)
-        self._btn_retake.pack(side="left", padx=4)
+                                bg="#5B5EA6", width=0)
+        self._btn_retake.grid(row=0, column=1, sticky="ew", padx=4)
         self._btn_retake.configure(state="disabled")
 
-        self._btn_use = _btn(btn_bar, "✅  Dùng ảnh này", self._use_image,
-                             bg="#107C41", width=18)
-        self._btn_use.pack(side="left", padx=4)
+        self._btn_use = _btn(btn_bar, "✅  Dùng ảnh", self._use_image,
+                             bg="#107C41", width=0)
+        self._btn_use.grid(row=0, column=2, sticky="ew", padx=4)
         self._btn_use.configure(state="disabled")
 
-        _btn(btn_bar, "❌  Huỷ", self._on_close,
-             bg="#888888", width=10).pack(side="right", padx=4)
+        self._btn_cancel = _btn(btn_bar, "❌  Huỷ", self._on_close, bg="#888888", width=0)
+        self._btn_cancel.grid(row=0, column=3, sticky="ew", padx=4)
 
         # Gợi ý
         tk.Label(self,
-                 text="💡  Đặt phiếu phẳng, đủ 4 góc, nền tương phản — "
-                      "ảnh chụp được lưu vào output/camera/",
-                 bg=COLOR_BG, fg="#666", font=("Segoe UI", 8)).pack(pady=(0, 6))
+                 text="Đặt phiếu phẳng, đủ bốn góc và có nền tương phản.",
+                 bg=COLOR_BG, fg="#666", font=("Segoe UI", 8)).grid(row=5, column=0, pady=(0, 6))
 
     # ── Camera ────────────────────────────────────────────────────────────────
 
     def _start_camera(self, index: int | None = None):
+        if self._background_busy:
+            self._cam_var.set(self._cam_index)
+            return
         if index is not None:
             self._cam_index = index
         self._stop_camera()
         self._frozen = False
         self._frozen_frame = None
+        self._original_frame = None
+        self._preview_frame = None
+        self._background_removed = False
+        self._btn_background.configure(state="disabled")
+        self._btn_original.configure(state="disabled")
         self._btn_capture.configure(state="disabled")
         self._btn_retake.configure(state="disabled")
         self._btn_use.configure(state="disabled")
@@ -373,15 +433,25 @@ class CameraDialog(tk.Toplevel):
         self.after(33, self._poll_frame)
 
     def _show_frame(self, frame: np.ndarray):
+        self._preview_frame = frame
         if not _HAS_PIL:
             return
-        photo = _cv2_to_photoimage(frame, self.PREVIEW_W, self.PREVIEW_H)
+        width, height = self._canvas.winfo_width(), self._canvas.winfo_height()
+        width = width if width > 1 else self.PREVIEW_W
+        height = height if height > 1 else self.PREVIEW_H
+        photo = _cv2_to_photoimage(frame, max(1, width - 8), max(1, height - 8))
         if photo is None:
             return
         self._photo = photo   # giữ reference
         self._canvas.delete("all")
-        cx, cy = self.PREVIEW_W // 2, self.PREVIEW_H // 2
+        cx, cy = width // 2, height // 2
         self._canvas.create_image(cx, cy, anchor="center", image=self._photo)
+
+    def _resize_camera_preview(self, event):
+        if self._preview_frame is not None:
+            self._show_frame(self._preview_frame)
+        else:
+            self._canvas.coords(self._placeholder_id, event.width // 2, event.height // 2)
 
     def _stop_camera(self):
         self._running = False
@@ -404,6 +474,11 @@ class CameraDialog(tk.Toplevel):
             return
         self._frozen = True
         self._frozen_frame = frame
+        self._original_frame = frame.copy()
+        self._background_removed = False
+        self._btn_background.configure(state="normal")
+        self._btn_original.configure(state="disabled")
+        self._lbl_background.configure(text="Có thể tách nền trước khi dùng ảnh này.")
         self._show_frame(frame)
 
         # Overlay badge "CHỤP"
@@ -417,35 +492,103 @@ class CameraDialog(tk.Toplevel):
 
     def _retake(self):
         """Tiếp tục live feed để chụp lại."""
+        if self._background_busy:
+            return
         self._frozen = False
         self._frozen_frame = None
+        self._original_frame = None
+        self._background_removed = False
+        self._btn_background.configure(state="disabled")
+        self._btn_original.configure(state="disabled")
+        self._lbl_background.configure(text="Chụp ảnh để tách nền và căn thẳng phiếu.")
         self._btn_capture.configure(state="normal")
         self._btn_retake.configure(state="disabled")
         self._btn_use.configure(state="disabled")
         self._poll_frame()
 
     def _use_image(self):
-        """Lưu frame đóng băng thành JPEG và đóng dialog."""
-        if self._frozen_frame is None:
+        """Lưu PNG để giữ nét tô; giữ bản gốc riêng khi đã tách nền."""
+        if self._frozen_frame is None or self._background_busy:
             return
-        import time
-        out_dir = ROOT / "output" / "camera"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        ts = time.strftime("%Y%m%d_%H%M%S")
-        out_path = out_dir / f"capture_{ts}.jpg"
-
-        ok, encoded = cv2.imencode(
-            ".jpg", self._frozen_frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
-        if not ok:
-            messagebox.showerror("Lỗi", "Không thể mã hoá ảnh.")
+        name = f"capture_{uuid4().hex}"
+        try:
+            original = self._original_frame if self._original_frame is not None else self._frozen_frame
+            original_path = save_image(CAMERA_DIR / f"{name}.png", original)
+            out_path = original_path
+            if self._background_removed:
+                out_path = save_image(CAMERA_DIR / f"{name}_no_background.png", self._frozen_frame)
+        except OMRError as exc:
+            messagebox.showerror("Lỗi lưu ảnh", str(exc), parent=self)
             return
-        encoded.tofile(str(out_path))
+        self._original_path = original_path
         self._result_path = out_path
         self._on_close()
 
+    def _remove_background(self):
+        """Tách nền trên ảnh đã chụp; không chạy trên mỗi frame camera."""
+        if self._frozen_frame is None or self._background_busy or self._background_removed:
+            return
+        self._background_busy = True
+        for button in (self._btn_background, self._btn_original, self._btn_use, self._btn_retake):
+            button.configure(state="disabled")
+        self._lbl_background.configure(text="Đang tách nền…")
+        threading.Thread(target=self._background_worker, args=(self._background_queue, self._frozen_frame.copy()), daemon=True).start()
+        self._background_poll_id = self.after(WORKER_POLL_MS, self._poll_background)
+
+    @staticmethod
+    def _background_worker(results: Queue, image: np.ndarray):
+        """Worker chỉ gửi dữ liệu; không gọi Tk."""
+        try:
+            results.put((remove_background(image), None))
+        except Exception as exc:
+            results.put((None, exc))
+
+    def _poll_background(self):
+        if self._closed:
+            return
+        self._background_poll_id = None
+        try:
+            image, error = self._background_queue.get_nowait()
+        except Empty:
+            self._background_poll_id = self.after(WORKER_POLL_MS, self._poll_background)
+            return
+        try:
+            if error is not None:
+                raise error
+            self._show_frame(image)
+            self._frozen_frame = image
+            self._background_removed = True
+            self._lbl_background.configure(text="Đã tách nền. Kiểm tra đủ bốn góc và các ô đáp án.")
+        except Exception as exc:
+            self._lbl_background.configure(text="Chưa tách được nền. Ảnh gốc vẫn được giữ.")
+            messagebox.showerror("Lỗi tách nền", str(exc), parent=self)
+        finally:
+            self._background_busy = False
+            self._btn_background.configure(state="disabled" if self._background_removed else "normal")
+            self._btn_original.configure(state="normal" if self._background_removed else "disabled")
+            self._btn_use.configure(state="normal")
+            self._btn_retake.configure(state="normal")
+
+    def _restore_original(self):
+        if self._original_frame is None or self._background_busy:
+            return
+        self._frozen_frame = self._original_frame.copy()
+        self._background_removed = False
+        self._show_frame(self._frozen_frame)
+        self._btn_background.configure(state="normal")
+        self._btn_original.configure(state="disabled")
+        self._lbl_background.configure(text="Đã quay lại ảnh gốc.")
+
     def _on_close(self):
+        self._closed = True
+        if self._background_poll_id is not None:
+            self.after_cancel(self._background_poll_id)
+            self._background_poll_id = None
         self._stop_camera()
         self.destroy()
+        # Các đối tượng Tcl phải được giải phóng ở luồng tạo giao diện.
+        self._photo = None
+        self._cam_var = None
 
 
 # ─── App chính ────────────────────────────────────────────────────────────────
@@ -454,12 +597,13 @@ class OMRApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("1140x740")
-        self.minsize(900, 600)
+        _fit_window(self, (1140, 740), (780, 500))
         self.configure(bg=COLOR_BG)
 
         # State
         self._image_path: Path | None = None
+        self._original_image_path: Path | None = None
+        self._already_warped = False
         self._answer_key: list[str] | None = None   # đáp án chuẩn hiện tại
         self._result: dict | None = None
         self._score_result: dict | None = None
@@ -476,77 +620,98 @@ class OMRApp(tk.Tk):
     # ── Xây giao diện ─────────────────────────────────────────────────────────
 
     def _build_ui(self):
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
         self._build_toolbar()
         self._build_main()
         self._build_statusbar()
 
     def _build_toolbar(self):
         bar = tk.Frame(self, bg=COLOR_TOOLBAR, pady=8)
-        bar.pack(fill="x", side="top")
+        bar.grid(row=0, column=0, sticky="ew")
+        for column in range(4):
+            bar.columnconfigure(column, weight=1, uniform="toolbar_actions")
 
-        tk.Label(bar, text="  OMR Scanner",
+        header = tk.Frame(bar, bg=COLOR_TOOLBAR)
+        header.grid(row=0, column=0, columnspan=4, sticky="ew", padx=12, pady=(0, 8))
+        header.columnconfigure(1, weight=1)
+
+        tk.Label(header, text="OMR Scanner",
                  bg=COLOR_TOOLBAR, fg="white",
-                 font=("Segoe UI", 13, "bold")).pack(side="left", padx=(10, 24))
+                 font=("Segoe UI", 13, "bold")).grid(row=0, column=0, padx=(0, 16))
 
-        self._btn_img = _btn(bar, "📂  Chọn ảnh phiếu",
-                             self._pick_image, bg="#1a5a9a", width=20)
-        self._btn_img.pack(side="left", padx=4)
+        self._btn_img = _btn(bar, "📂  Chọn ảnh",
+                             self._pick_image, bg="#1a5a9a", width=0)
+        self._btn_img.grid(row=1, column=0, sticky="ew", padx=(12, 4))
 
         self._btn_camera = _btn(bar, "📷  Camera",
-                                self._open_camera, bg="#7B3F9E", width=13)
-        self._btn_camera.pack(side="left", padx=4)
+                                self._open_camera, bg="#7B3F9E", width=0)
+        self._btn_camera.grid(row=1, column=1, sticky="ew", padx=4)
 
         # Menu dropdown cho đáp án chuẩn
         key_frame = tk.Frame(bar, bg=COLOR_TOOLBAR)
-        key_frame.pack(side="left", padx=4)
+        key_frame.grid(row=1, column=2, sticky="ew", padx=4)
+        key_frame.columnconfigure(0, weight=1)
 
-        self._btn_key_edit = _btn(key_frame, "📋  Nhập đáp án chuẩn",
-                                  self._open_key_editor, bg="#1a5a9a", width=22)
-        self._btn_key_edit.pack(side="left")
+        self._btn_key_edit = _btn(key_frame, "📋  Đáp án chuẩn",
+                                  self._open_key_editor, bg="#1a5a9a", width=0)
+        self._btn_key_edit.grid(row=0, column=0, sticky="ew")
 
         self._btn_key_file = _btn(key_frame, "▾",
                                   self._show_key_menu, bg="#0f3d70", width=2)
-        self._btn_key_file.pack(side="left", padx=(1, 0))
+        self._btn_key_file.grid(row=0, column=1, padx=(1, 0))
 
         self._btn_scan = _btn(bar, "🔍  Đọc phiếu",
-                              self._run_scan, bg="#107C41", width=16)
-        self._btn_scan.pack(side="left", padx=8)
+                              self._run_scan, bg="#107C41", width=0)
+        self._btn_scan.grid(row=1, column=3, sticky="ew", padx=(4, 12))
 
         # Thông tin đường dẫn / đáp án
-        self._lbl_info = tk.Label(bar, text="Chưa chọn ảnh",
+        self._lbl_info = tk.Label(header, text="Chưa chọn ảnh", width=1,
                                   bg=COLOR_TOOLBAR, fg="#BDD7EE",
                                   font=("Segoe UI", 9), anchor="w")
-        self._lbl_info.pack(side="left", padx=10, fill="x", expand=True)
+        self._lbl_info.grid(row=0, column=1, sticky="ew", padx=8)
 
         # Badge đáp án chuẩn
-        self._lbl_key_badge = tk.Label(bar, text="Chưa có đáp án chuẩn",
+        self._lbl_key_badge = tk.Label(header, text="Chưa có đáp án chuẩn",
                                        bg="#C05000", fg="white",
                                        font=("Segoe UI", 9, "bold"),
                                        padx=8, pady=3)
-        self._lbl_key_badge.pack(side="right", padx=10)
+        self._lbl_key_badge.grid(row=0, column=2, padx=(8, 0))
 
     def _build_main(self):
         paned = tk.PanedWindow(self, orient="horizontal",
                                bg="#D0DAE8", sashwidth=5, sashrelief="flat")
-        paned.pack(fill="both", expand=True, padx=8, pady=6)
+        paned.grid(row=1, column=0, sticky="nsew", padx=8, pady=6)
 
         # Panel trái — preview ảnh
         left = tk.Frame(paned, bg=COLOR_BG)
-        paned.add(left, minsize=320)
+        paned.add(left, minsize=280, stretch="always")
 
         tk.Label(left, text="Ảnh phiếu / Kết quả nhận diện",
                  bg=COLOR_BG, fg="#1a3a5c",
                  font=("Segoe UI", 10, "bold")).pack(pady=(4, 2))
 
-        self._canvas = tk.Canvas(left, width=PREVIEW_W, height=PREVIEW_H,
+        edit_bar = tk.Frame(left, bg=COLOR_BG)
+        edit_bar.pack(fill="x", padx=6, pady=(0, 4))
+        self._btn_background = _btn(edit_bar, "Tách nền", self._remove_background, width=12, state="disabled")
+        self._btn_background.pack(side="left", padx=(0, 4))
+        self._btn_original = _btn(edit_bar, "Ảnh gốc", self._restore_original,
+                                  bg="#5B5EA6", width=12, state="disabled")
+        self._btn_original.pack(side="left")
+        self._lbl_image_mode = tk.Label(left, text="Giữ phần phiếu, bỏ nền xung quanh và căn thẳng.",
+                                        bg=COLOR_BG, fg="#555", font=("Segoe UI", 9), width=1)
+        self._lbl_image_mode.pack(fill="x", padx=6, pady=(0, 4))
+
+        self._canvas = tk.Canvas(left, width=PREVIEW_W, height=1,
                                  bg="#DDEEFF",
                                  highlightthickness=1, highlightbackground="#AACCEE")
         self._canvas.pack(fill="both", expand=True, padx=6, pady=(0, 6))
         self._show_placeholder()
+        self._canvas.bind("<Configure>", self._resize_preview)
 
         # Panel phải — kết quả
         right = tk.Frame(paned, bg=COLOR_BG)
-        paned.add(right, minsize=420)
+        paned.add(right, minsize=420, stretch="always")
 
         # Thanh thống kê
         sum_bar = tk.Frame(right, bg=COLOR_BG)
@@ -554,11 +719,12 @@ class OMRApp(tk.Tk):
         self._lbl_score = tk.Label(sum_bar, text="Chưa có kết quả",
                                    bg=COLOR_BG, fg="#1a3a5c",
                                    font=("Segoe UI", 12, "bold"))
-        self._lbl_score.pack(side="left")
+        self._lbl_score.pack(anchor="w")
         self._lbl_stats = tk.Label(sum_bar, text="",
                                    bg=COLOR_BG, fg="#555",
-                                   font=("Segoe UI", 9))
-        self._lbl_stats.pack(side="left", padx=10)
+                                   font=("Segoe UI", 9), width=1, anchor="w", justify="left", wraplength=400)
+        self._lbl_stats.pack(fill="x", pady=(2, 4))
+        self._lbl_stats.bind("<Configure>", lambda e: self._lbl_stats.configure(wraplength=max(1, e.width)))
 
         # Bảng kết quả
         tbl_frame = tk.Frame(right, bg=COLOR_BG)
@@ -573,7 +739,7 @@ class OMRApp(tk.Tk):
 
         cols = ("question", "student", "correct", "result")
         self._tree = ttk.Treeview(tbl_frame, columns=cols,
-                                  show="headings", selectmode="browse", height=26)
+                                  show="headings", selectmode="browse", height=1)
         cfg = [
             ("question", "Câu",          60),
             ("student",  "Đáp án HS",   110),
@@ -591,22 +757,24 @@ class OMRApp(tk.Tk):
 
         sb = ttk.Scrollbar(tbl_frame, orient="vertical", command=self._tree.yview)
         self._tree.configure(yscrollcommand=sb.set)
-        self._tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
+        self._tree.pack(side="left", fill="both", expand=True)
 
     def _build_statusbar(self):
-        bar = tk.Frame(self, bg="#DDEEFF", height=40)
-        bar.pack(fill="x", side="bottom")
-        bar.pack_propagate(False)
+        bar = tk.Frame(self, bg="#DDEEFF")
+        bar.grid(row=2, column=0, sticky="ew")
+        bar.columnconfigure(0, weight=1)
 
         self._lbl_status = tk.Label(bar, text="Sẵn sàng.",
                                     bg="#DDEEFF", fg="#1a3a5c",
-                                    font=("Segoe UI", 9), anchor="w")
-        self._lbl_status.pack(side="left", padx=12, fill="y")
+                                    font=("Segoe UI", 9), anchor="w", justify="left", width=1,
+                                    wraplength=500)
+        self._lbl_status.grid(row=0, column=0, sticky="ew", padx=12, pady=8)
+        self._lbl_status.bind("<Configure>", lambda e: self._lbl_status.configure(wraplength=max(1, e.width)))
 
         self._btn_excel = _btn(bar, "💾  Xuất Excel",
                                self._export_excel, bg="#107C41", width=16)
-        self._btn_excel.pack(side="right", padx=12, pady=5)
+        self._btn_excel.grid(row=0, column=1, padx=12, pady=8)
         self._btn_excel.configure(state="disabled")
 
     # ── Khôi phục / lưu trạng thái ───────────────────────────────────────────
@@ -641,22 +809,18 @@ class OMRApp(tk.Tk):
         self._refresh_ui()
         last_image = state.get("last_image_path") if isinstance(state, dict) else None
         if isinstance(last_image, str) and last_image:
-            self._load_image_path(Path(last_image))
+            original = state.get("original_image_path")
+            self._load_image_path(Path(last_image), already_warped=state.get("already_warped") is True,
+                                  original_path=Path(original) if isinstance(original, str) and original else None)
 
     def _save_state(self):
         """Lưu đáp án chuẩn và đường dẫn ảnh hiện tại."""
-        try:
-            if self._answer_key:
-                _save_json(LAST_KEY_PATH, {"answers": self._answer_key})
-            state = {}
-            if self._image_path:
-                state["last_image_path"] = str(self._image_path)
-            _save_json(APP_STATE_PATH, state)
-            return True
-        except OSError as exc:
-            self._set_status(f"⚠ Không lưu được trạng thái: {exc}", "#C05000")
-            messagebox.showwarning("Không lưu được trạng thái", str(exc), parent=self)
-            return False
+        if self._answer_key:
+            _save_json_safe(LAST_KEY_PATH, {"answers": self._answer_key})
+        state = {}
+        if self._image_path:
+            state["last_image_path"] = str(self._image_path)
+        _save_json_safe(APP_STATE_PATH, state)
 
     # ── Cập nhật UI ───────────────────────────────────────────────────────────
 
@@ -672,9 +836,14 @@ class OMRApp(tk.Tk):
         for button in (self._btn_img, self._btn_camera, self._btn_key_edit, self._btn_key_file):
             button.configure(state="disabled" if self._busy else "normal")
         self._btn_excel.configure(state="normal" if self._score_result and not self._busy else "disabled")
+        self._btn_background.configure(state="normal" if has_img and not self._busy and not self._already_warped else "disabled")
+        can_restore = self._original_image_path is not None and self._original_image_path != self._image_path
+        self._btn_original.configure(state="normal" if can_restore and not self._busy else "disabled")
+        self._lbl_image_mode.configure(text="Đã tách nền • Sẵn sàng đọc phiếu" if self._already_warped
+                                       else "Ảnh gốc • Có thể tách nền trước khi đọc phiếu")
 
         # Thông tin ảnh
-        if self._image_path is not None:
+        if has_img:
             self._lbl_info.configure(text=str(self._image_path.name))
         else:
             self._lbl_info.configure(text="Chưa chọn ảnh")
@@ -714,33 +883,63 @@ class OMRApp(tk.Tk):
         dlg = CameraDialog(self)
         captured = dlg.captured_path
         if captured and captured.is_file():
-            self._load_image_path(captured)
+            self._load_image_path(captured, already_warped=dlg.background_removed, original_path=dlg.original_path)
 
-    def _load_image_path(self, path: Path):
+    def _load_image_path(self, path: Path, *, already_warped: bool = False, original_path: Path | None = None):
         """Đọc ảnh và thu nhỏ trong nền; chỉ cập nhật Tk ở luồng giao diện."""
         if self._busy:
             return
         self._busy = True
         self._image_path = None
-        self._result = None
-        self._score_result = None
-        self._clear_table()
+        self._original_image_path = None
+        self._already_warped = False
+        self._reset_results()
         self._show_placeholder()
-        self._lbl_score.configure(text="Chưa có kết quả", fg="#1a3a5c")
-        self._lbl_stats.configure(text="")
         self._btn_excel.configure(state="disabled")
         self._refresh_ui()
         self._lbl_info.configure(text=path.name)
         self._set_status(f"⏳ Đang tải ảnh: {path.name}…", COLOR_BTN)
-        threading.Thread(target=self._image_worker, args=(path,), daemon=True).start()
+        threading.Thread(target=self._image_worker, args=(path, already_warped, original_path), daemon=True).start()
 
-    def _image_worker(self, path: Path):
+    def _image_worker(self, path: Path, already_warped: bool = False, original_path: Path | None = None):
         """Không gọi Tk, kể cả after(), từ worker."""
         try:
             preview = resize_image(load_image(path), max(PREVIEW_W, PREVIEW_H))
-            self._worker_results.put(("image", (path, preview), None))
+            self._worker_results.put(("image", (path, preview, already_warped, original_path or path), None))
         except Exception as exc:
             self._worker_results.put(("image", None, exc))
+
+    def _remove_background(self):
+        """Tạo ảnh làm việc riêng; giữ nguyên ảnh gốc để có thể hoàn tác."""
+        if self._image_path is None or self._busy or self._already_warped:
+            return
+        self._busy = True
+        self._set_status("Đang tách nền và căn thẳng phiếu…", COLOR_BTN)
+        self._refresh_ui()
+        threading.Thread(target=self._background_worker, args=(self._worker_results, self._image_path), daemon=True).start()
+
+    @staticmethod
+    def _background_worker(results: Queue, path: Path):
+        try:
+            cleaned = remove_background(load_image(path))
+            out_path = save_image(BACKGROUND_DIR / f"{path.stem}_{uuid4().hex}.png", cleaned)
+            preview = resize_image(cleaned, max(PREVIEW_W, PREVIEW_H))
+            results.put(("background", (out_path, preview), None))
+        except Exception as exc:
+            results.put(("background", None, exc))
+
+    def _restore_original(self):
+        if self._busy or self._original_image_path is None:
+            return
+        self._load_image_path(self._original_image_path)
+
+    def _reset_results(self):
+        """Ảnh đầu vào đổi thì kết quả chấm cũ không còn dùng được."""
+        self._result = None
+        self._score_result = None
+        self._clear_table()
+        self._lbl_score.configure(text="Chưa có kết quả", fg="#1a3a5c")
+        self._lbl_stats.configure(text="")
 
     def _poll_workers(self):
         """Nhận dữ liệu/lỗi trong main thread, luôn khôi phục các nút."""
@@ -755,21 +954,19 @@ class OMRApp(tk.Tk):
                 if error is not None:
                     raise error
                 if kind == "image":
-                    path, preview = payload
+                    path, preview, already_warped, original_path = payload
                     self._show_image(preview)
                     self._image_path = path
-                    if self._save_state():
-                        self._set_status(f"📂 Đã tải ảnh: {path.name}. Nhấn Đọc phiếu để nhận diện.")
+                    self._save_state()
+                    self._set_status(f"📂 Đã tải ảnh: {path.name}. Nhấn Đọc phiếu để nhận diện.")
                 else:
                     self._on_scan_done(payload, None)
             except Exception as exc:
-                self._result = None
-                self._score_result = None
-                self._clear_table()
-                self._lbl_score.configure(text="Chưa có kết quả", fg="#1a3a5c")
-                self._lbl_stats.configure(text="")
+                if kind != "background":
+                    self._reset_results()
                 self._set_status(f"❌ Lỗi: {exc}", "#C00000")
-                messagebox.showerror("Lỗi tải ảnh" if kind == "image" else "Lỗi đọc phiếu", str(exc), parent=self)
+                title = {"image": "Lỗi tải ảnh", "background": "Lỗi tách nền"}.get(kind, "Lỗi đọc phiếu")
+                messagebox.showerror(title, str(exc), parent=self)
             finally:
                 self._busy = False
                 if not self._closed:
@@ -858,13 +1055,13 @@ class OMRApp(tk.Tk):
         self._lbl_stats.configure(text="")
         self._set_status("⏳ Đang xử lý ảnh…", COLOR_BTN)
         self._refresh_ui()
-        threading.Thread(target=self._scan_worker, args=(self._image_path,), daemon=True).start()
+        threading.Thread(target=self._scan_worker, args=(self._image_path, self._already_warped), daemon=True).start()
 
-    def _scan_worker(self, image_path: Path):
+    def _scan_worker(self, image_path: Path, already_warped: bool = False):
         """Chụp cố định đường dẫn đầu vào, chuyển kết quả/lỗi qua queue."""
         try:
             from main import process_omr
-            result = process_omr(image_path, debug=False)
+            result = process_omr(image_path, debug=False, already_warped=already_warped)
             self._worker_results.put(("scan", result, None))
         except Exception as exc:  # noqa: BLE001
             self._worker_results.put(("scan", None, exc))
@@ -953,8 +1150,12 @@ class OMRApp(tk.Tk):
     # ── Cập nhật bảng / ảnh ───────────────────────────────────────────────────
 
     def _show_image(self, bgr: np.ndarray):
+        self._display_image = bgr
         self._canvas.delete("all")
-        photo = _cv2_to_photoimage(bgr, PREVIEW_W, PREVIEW_H)
+        cw, ch = self._canvas.winfo_width(), self._canvas.winfo_height()
+        cw = cw if cw > 1 else PREVIEW_W
+        ch = ch if ch > 1 else PREVIEW_H
+        photo = _cv2_to_photoimage(bgr, max(1, cw - 8), max(1, ch - 8))
         if not photo:
             self._canvas.create_text(
                 PREVIEW_W // 2, PREVIEW_H // 2,
@@ -963,11 +1164,15 @@ class OMRApp(tk.Tk):
             )
             return
         self._photo = photo
-        cw = self._canvas.winfo_width() or PREVIEW_W
-        ch = self._canvas.winfo_height() or PREVIEW_H
         self._canvas.create_image(cw // 2, ch // 2, anchor="center", image=self._photo)
 
+    def _resize_preview(self, event):
+        """Giữ toàn bộ phiếu trong khung sau khi thêm thanh chỉnh ảnh."""
+        if self._display_image is not None:
+            self._show_image(self._display_image)
+
     def _show_placeholder(self):
+        self._display_image = None
         self._canvas.delete("all")
         self._canvas.create_text(
             PREVIEW_W // 2, PREVIEW_H // 2,
