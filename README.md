@@ -128,9 +128,10 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-Lệnh cuối hiển thị hướng dẫn, chưa mở GUI. Môi trường `.venv` trong thư mục
-đã được cài và kiểm thử với Python 3.14.4 trên Windows. Không cần kích hoạt
-venv hay đổi PowerShell execution policy khi dùng đường dẫn trên.
+Lệnh cuối hiển thị hướng dẫn, chưa mở GUI. Thư mục `.venv` không được đưa lên
+Git; hãy tạo môi trường theo các lệnh trên. Project đã được kiểm thử với
+Python 3.14.4 trên Windows. Không cần kích hoạt venv hay đổi PowerShell
+execution policy khi dùng đường dẫn trên.
 
 Chạy ví dụ có sẵn:
 
@@ -156,18 +157,20 @@ OMR_Project/
 ├── main.py                      # CLI phát triển và phối hợp các module
 ├── requirements.txt
 ├── config/layout.json           # Layout mẫu có thể hiệu chỉnh
+├── config/printed_50.json       # Tham số nhận mẫu phiếu in thật
 ├── modules/
 │   ├── __init__.py
 │   ├── errors.py                # Các lỗi có thông báo cụ thể
 │   ├── image_processing.py
 │   ├── paper_detection.py
+│   ├── printed_form.py          # Nhận dạng mốc trên mẫu phiếu in
 │   ├── answer_detection.py
-│   ├── validation.py            # Skeleton Phase 6
-│   ├── scoring.py               # Skeleton Phase 6
-│   └── export_excel.py          # Skeleton Phase 7
+│   ├── validation.py            # Kiểm tra 50 đáp án
+│   ├── scoring.py               # Chấm điểm thang 10
+│   └── export_excel.py          # Xuất bảng kết quả
 ├── gui/
 │   ├── __init__.py
-│   └── app.py                   # Skeleton Phase 9
+│   └── app.py                   # GUI Tkinter, camera và chấm điểm
 ├── answer_key/answer_key.json
 ├── scripts/generate_samples.py
 ├── tests/
@@ -175,16 +178,17 @@ OMR_Project/
 └── output/
 ```
 
-## Báo cáo từng phase
+## Lịch sử triển khai và trạng thái hiện tại
 
-### Phase 1 — Cấu trúc và skeleton
+Các phần Phase 1–4 dưới đây ghi lại lịch sử phát triển. Hiện tại project đã có
+GUI, đọc đáp án chuẩn, validation, chấm điểm và xuất Excel; chúng không còn là
+các skeleton như mô tả ban đầu.
+
+### Phase 1 — Cấu trúc
 
 - Đã tạo các thư mục và toàn bộ file bắt buộc, requirements, module lỗi chung.
-- `validation.py`, `scoring.py`, `export_excel.py`, `gui/app.py` chỉ khai báo
-  hợp đồng hàm và thông báo phase triển khai; không trả kết quả giả.
+- Các module validation, scoring, Excel và GUI đã được triển khai sau giai đoạn này.
 - Test: `python main.py` kết thúc bình thường với hướng dẫn CLI.
-- Còn lại: chưa đạt các tiêu chí nghiệm thu của toàn bộ sản phẩm, đặc biệt GUI,
-  kiểm tra đáp án chuẩn, chấm điểm và Excel.
 
 ### Phase 2 — Tiền xử lý
 
@@ -230,12 +234,11 @@ python main.py test_images/sample_photo.png --phase 3 --debug --output-dir outpu
 - Cột trái là câu 1–25, cột phải 26–50. Không OCR chữ cái hay số câu.
 - API mặc định trả đúng 50 giá trị; `question_count=5/10` là chế độ kiểm thử.
   CLI có thể xuất số câu này, vì vậy cần giữ mặc định 50 khi đọc toàn phiếu.
-- Có xử lý cơ bản `BLANK` khi không ô nào đạt ngưỡng, `MULTIPLE` khi ít nhất
-  hai ô đạt ngưỡng; chưa làm hiệu chỉnh chuyên sâu cho gôm tẩy/nét chì mờ ở Phase 5.
+- Có xử lý `BLANK` khi không ô nào đạt ngưỡng và `MULTIPLE` khi ít nhất
+  hai ô đạt ngưỡng; nét chì mờ hoặc tẩy xóa vẫn cần được kiểm tra bằng mắt.
 - Kiểm tra viền bubble để phát hiện nhiều trường hợp layout lệch/giấy trống.
   Đây là kiểm tra hỗ trợ, không chứng minh mẫu phiếu khớp trong mọi trường hợp.
-- `main.py` ghép tạm các bước hiện có để chạy thử; pipeline đầy đủ có validation,
-  đáp án chuẩn, scoring sẽ được hoàn thiện ở Phase 8.
+- `main.py` phối hợp các bước nhận diện; GUI thực hiện validation, chấm điểm và xuất Excel.
 
 ```powershell
 python -m unittest tests.test_answer_detection.AnswerDetectionTests.test_01_five_questions -v
@@ -247,14 +250,14 @@ python main.py test_images/sample_photo.png --debug
 python main.py test_images/sample_shadow.jpg --debug --output-dir output/shadow
 ```
 
-Tổng cộng **20 kiểm thử đã đạt**: ảnh đọc qua đường dẫn Unicode, hình học phối
+Các kiểm thử bao gồm ảnh đọc qua đường dẫn Unicode, hình học phối
 cảnh, mốc 5/10/50 câu, ranh giới 25/26, blank/multiple, ảnh không có vùng OMR,
 config sai, ánh sáng không đều + blur nhẹ + JPEG, pipeline và sáu ảnh debug.
 
-**Giới hạn:** đây là fixture tổng hợp được vẽ độc lập với detector, chưa phải
-đánh giá độ chính xác trên phiếu thật. Mẫu thật khác layout có thể bị từ chối
-hoặc đọc sai nếu không hiệu chỉnh. Các ca tô nhạt, tẩy xóa, bóng gắt, mất nét,
-nếp gấp và xoay mạnh cần bổ sung dữ liệu ở các phase tiếp theo.
+**Giới hạn:** fixture tổng hợp được vẽ độc lập với detector; kiểm thử ảnh thật
+hiện bao phủ một mẫu in và các biến thể của ảnh đó. Mẫu thật khác layout có thể
+bị từ chối hoặc đọc sai nếu không hiệu chỉnh. Các ca tô nhạt, tẩy xóa, bóng gắt,
+mất nét, nếp gấp và xoay mạnh cần thêm dữ liệu kiểm thử.
 
 ## Cấu hình theo phiếu thật
 
@@ -287,7 +290,7 @@ python main.py test_images/sample_sheet.png --already-warped --debug --output-di
 Nếu cần bố cục khác hai cột đều, hàng không đều hoặc bubble không đều khoảng cách,
 cần mở rộng mô hình layout; không chỉ giảm ngưỡng kiểm tra viền để cố đọc.
 
-## API cho giai đoạn tích hợp
+## API nhận diện CLI
 
 ```python
 from main import process_omr
@@ -296,12 +299,13 @@ result = process_omr("test_images/sample_photo.png", debug=True)
 answers = result["answers"]             # list[str], 50 phần tử mặc định
 warped = result["processed_image"]      # numpy.ndarray BGR, đã warp
 ratios = result["fill_ratios"]          # 50 hàng × 4 tỷ lệ
-score_result = result["score_result"]   # None, chưa chấm điểm
+score_result = result["score_result"]   # None; CLI chỉ nhận diện
 ```
 
 Có thể gọi riêng `load_image`, `preprocess_image`, `detect_and_warp_paper`,
 `detect_answers` để phát triển từng bước. API ném `OMRError` hoặc lớp con;
-CLI bắt lỗi và trả mã thoát 1. GUI về sau chỉ cần gọi pipeline và hiển thị lỗi.
+CLI bắt lỗi và trả mã thoát 1. GUI gọi pipeline, kiểm tra đáp án chuẩn, chấm điểm
+và hiển thị kết quả.
 
 ## Debug
 
@@ -326,18 +330,61 @@ API không ghi tệp khi `debug=False`; CLI vẫn lưu kết quả cuối. Các 
 thư mục ghi đè tệp cùng tên; bước dừng sớm không xóa ảnh từ lần cũ. Dùng
 `--output-dir` khác nhau khi so sánh các ảnh/phase hoặc kiểm tra ca thất bại.
 
-## Các phase tiếp theo
+## Trạng thái và giới hạn
 
-- Phase 5: hiệu chỉnh BLANK/MULTIPLE với ảnh thật, nét chì mờ, tẩy xóa và tô thiếu.
-- Phase 6: validation đủ 50 câu, đọc/kiểm tra answer key, chấm đúng/sai/blank/multiple.
-- Phase 7: xuất Excel bằng openpyxl và xử lý lỗi ghi/đang mở file.
-- Phase 8: pipeline đầy đủ, chấm điểm thang 10, lỗi answer key và kết quả không đủ câu.
-- Phase 9: Tkinter chọn ảnh, preview, đọc phiếu, bảng 50 câu và xuất Excel.
-- Phase 10: bộ ảnh thật, đo tỷ lệ nhận diện và chỉnh ngưỡng; chỉ nghiệm thu toàn bộ
-  sản phẩm sau khi các chức năng trên được triển khai và kiểm thử.
+- GUI hỗ trợ chọn ảnh, camera, nhập/tải đáp án chuẩn, xem kết quả, chấm điểm
+  và xuất Excel.
+- CLI `main.py` tập trung vào nhận diện ảnh; `score_result` của CLI luôn là `None`.
+- Nhận mẫu in tự động đã được hiệu chỉnh với một mẫu phiếu thật và các biến thể
+  của ảnh đó; không đảm bảo mọi mẫu in, hướng xoay, giấy cong hoặc nền phức tạp.
+- Kiểm tra ảnh đã căn thẳng và vòng tròn đánh dấu trước khi dùng layout mới.
 
 [ENG] English version
 The CLI `main.py` remains a standalone recognition tool; `score_result` from the CLI is `None`.
+
+## Resizable windows — 20/10/2026
+
+The toolbar, content area, and bottom bar use separate rows. Only the image and
+answer table expand; the **Export Excel** button stays visible. Long image names
+and status text wrap instead of pushing controls out of the window. The main
+window opens at a screen-aware size, the preview fits its available area, and
+only the answer table scrolls to show all 50 questions. The camera window is
+resizable too, with its capture, background-removal, and use-image buttons kept
+outside the expanding preview.
+
+Layout checks: `python -m unittest tests.test_layout -v`. The main window was
+checked down to 780 × 500 and the camera window down to 600 × 460 using Tk
+widget geometry; test camera frames are simulated, so verify with a real webcam.
+
+## Remove the background from the preview — 20/10/2026
+
+- **Camera:** choose **Chụp** (Capture) → **Tách nền** (Remove Background) →
+  **Dùng ảnh** (Use Image) → **Đọc phiếu** (Read Sheet). Choose **Ảnh gốc**
+  (Original Image) to undo or **Chụp lại** (Retake) to capture another frame.
+- **Existing image:** choose **Chọn ảnh** (Select Image), then **Tách nền**
+  (Remove Background) above the preview. Inspect the result, then choose
+  **Đọc phiếu** (Read Sheet).
+- Background removal detects the four paper corners, crops the area outside the
+  sheet, and rectifies it to 1000 × 1400. It does not erase marks or produce an
+  alpha background.
+- Processing runs in a worker thread. If detection fails, the app reports the
+  error and keeps the current image so you can retry or capture another one.
+- The source image is not overwritten. Rectified files from selected images are
+  saved under `output/background_removed/`; camera captures and their originals
+  are under `output/camera/`. These generated working files are excluded from Git.
+- The app remembers whether an image is already rectified, including after
+  restart, and skips paper detection when reading it. Selecting another image
+  resets that state.
+
+The algorithm is in `modules/background_removal.py`; the GUI calls it and
+displays the result. Complex backgrounds, curved paper, or missing corners can
+still prevent detection; this preview step does not remove the recognition
+limitations below.
+
+```powershell
+.\.venv\Scripts\python.exe run_gui.py
+.\.venv\Scripts\python.exe -m unittest tests.test_background_removal tests.test_gui -v
+```
 
 ## Fixes for recognizing real answer sheets — 15/10/2026
 
@@ -375,7 +422,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-The last command displays the CLI instructions; it does not open the GUI. The `.venv` environment in the project directory has already been installed and tested with Python 3.14.4 on Windows. You do not need to activate the virtual environment or change the PowerShell execution policy when using the paths shown above.
+The last command displays the CLI instructions; it does not open the GUI. The `.venv` directory is not included in Git; create it using the commands above. The project has been tested with Python 3.14.4 on Windows. You do not need to activate the virtual environment or change the PowerShell execution policy when using the paths shown above.
 
 Run the included examples:
 
@@ -389,7 +436,7 @@ Result: reads 50 answers using the repeating A/B/C/D pattern in the sample, and 
 `test_images/expected_answers.json` contains the expected results for the development sample.
 `answer_key/answer_key.json` is also an **illustrative answer key**, not the actual answer key for an exam.
 
-On macOS/Linux, use `.venv/bin/python` instead of `\.venv\Scripts\python.exe`.
+On macOS/Linux, use `.venv/bin/python` instead of `.\.venv\Scripts\python.exe`.
 The program's default paths are calculated from `__file__` using pathlib, rather than being tied to a drive or Windows username.
 
 ## Project structure
@@ -399,18 +446,20 @@ OMR_Project/
 ├── main.py                      # Development CLI and module orchestration
 ├── requirements.txt
 ├── config/layout.json           # Adjustable sample layout
+├── config/printed_50.json       # Real printed-sheet marker settings
 ├── modules/
 │   ├── __init__.py
 │   ├── errors.py                # Errors with specific messages
 │   ├── image_processing.py
 │   ├── paper_detection.py
+│   ├── printed_form.py          # Printed-sheet marker detection
 │   ├── answer_detection.py
-│   ├── validation.py            # Phase 6 skeleton
-│   ├── scoring.py               # Phase 6 skeleton
-│   └── export_excel.py          # Phase 7 skeleton
+│   ├── validation.py            # Validates 50 answers
+│   ├── scoring.py               # Calculates a score out of 10
+│   └── export_excel.py          # Exports results
 ├── gui/
 │   ├── __init__.py
-│   └── app.py                   # Phase 9 skeleton
+│   └── app.py                   # Tkinter GUI, camera, and scoring
 ├── answer_key/answer_key.json
 ├── scripts/generate_samples.py
 ├── tests/
@@ -418,14 +467,17 @@ OMR_Project/
 └── output/
 ```
 
-## Phase-by-phase report
+## Implementation history and current status
 
-### Phase 1 — Structure and skeleton
+The Phase 1–4 sections below describe the development history. The project now
+includes the GUI, answer-key loading, validation, scoring, and Excel export; these
+are no longer skeletons as described in the initial implementation.
+
+### Phase 1 — Structure
 
 - Created all required directories and files, the requirements file, and a shared error module.
-- `validation.py`, `scoring.py`, `export_excel.py`, and `gui/app.py` only define function interfaces and messages describing the implementation phase; they do not return fabricated results.
+- Validation, scoring, Excel export, and GUI modules were implemented after this phase.
 - Test: `python main.py` exits normally after displaying the CLI instructions.
-- Remaining work: the full product acceptance criteria have not yet been met, especially for the GUI, answer-key validation, scoring, and Excel export.
 
 ### Phase 2 — Preprocessing
 
@@ -464,9 +516,9 @@ python main.py test_images/sample_photo.png --phase 3 --debug --output-dir outpu
 - Crops the answer area; divides it into two columns × 25 rows × 4 choices according to the configuration. Measures the ink-pixel ratio inside a small circle within each bubble to avoid counting the printed outline.
 - The left column contains questions 1–25; the right column contains questions 26–50. It does not use OCR to read letters or question numbers.
 - The default API returns exactly 50 values; `question_count=5/10` is for testing. The CLI can export those smaller question counts, so keep the default of 50 when reading a complete sheet.
-- Basic `BLANK` handling is implemented when no bubble reaches the threshold, and `MULTIPLE` handling when at least two bubbles reach it. Advanced calibration for faint pencil marks and erasures was not completed in Phase 5 at that stage.
+- `BLANK` is returned when no bubble reaches the threshold, and `MULTIPLE` when at least two bubbles reach it. Faint pencil marks and erasures still require visual checking.
 - Bubble-outline checks help detect layout misalignment and blank sheets. These checks are supplementary and do not prove that the template matches in every situation.
-- `main.py` temporarily combines the existing steps for trial runs; the complete pipeline with validation, answer keys, and scoring was planned for Phase 8.
+- `main.py` combines the recognition steps; the GUI performs validation, scoring, and Excel export.
 
 ```powershell
 python -m unittest tests.test_answer_detection.AnswerDetectionTests.test_01_five_questions -v
@@ -478,7 +530,7 @@ python main.py test_images/sample_photo.png --debug
 python main.py test_images/sample_shadow.jpg --debug --output-dir output/shadow
 ```
 
-A total of **20 tests passed**: reading images through Unicode paths, perspective geometry, 5/10/50-question markers, the boundary between questions 25 and 26, blank/multiple answers, images without an OMR region, invalid configuration, uneven lighting + slight blur + JPEG, the pipeline, and six debug images.
+Tests cover Unicode image paths, perspective geometry, 5/10/50-question reading, the boundary between questions 25 and 26, blank/multiple answers, invalid configurations, uneven lighting, JPEG input, the pipeline, and debug images.
 
 **Limitation:** this uses synthetic fixtures generated independently of the detector; it is not an accuracy evaluation on real answer sheets. A real template with a different layout may be rejected or read incorrectly unless calibrated. Cases involving faint marks, erasures, harsh shadows, incomplete strokes, folds, and strong rotation require additional data in later phases.
 
@@ -507,7 +559,7 @@ python main.py test_images/sample_sheet.png --already-warped --debug --output-di
 
 If a different layout is required—for example, unequal spacing between rows, or unevenly spaced bubbles—the layout model must be extended; simply lowering the outline-check threshold is not enough.
 
-## API for integration
+## Recognition API
 
 ```python
 from main import process_omr
@@ -516,10 +568,10 @@ result = process_omr("test_images/sample_photo.png", debug=True)
 answers = result["answers"]             # list[str], 50 elements by default
 warped = result["processed_image"]      # numpy.ndarray BGR, warped
 ratios = result["fill_ratios"]          # 50 rows × 4 ratios
-score_result = result["score_result"]   # None, scoring not implemented
+score_result = result["score_result"]   # None; the CLI only recognizes answers
 ```
 
-You can call `load_image`, `preprocess_image`, `detect_and_warp_paper`, and `detect_answers` individually to develop each stage. The API raises `OMRError` or a subclass; the CLI catches errors and exits with code 1. The GUI only needs to call the pipeline and display any errors.
+You can call `load_image`, `preprocess_image`, `detect_and_warp_paper`, and `detect_answers` individually to develop each stage. The API raises `OMRError` or a subclass; the CLI catches errors and exits with code 1. The GUI calls the pipeline, validates answers, scores them, and displays the results.
 
 ## Debugging
 
@@ -539,11 +591,12 @@ The final image shows the locations of A/B/C/D, ink ratios, question numbers, an
 
 The API does not write files when `debug=False`; the CLI still saves the final results. Runs using the same output directory overwrite files with matching names; an early-stopped run does not delete images left from an earlier run. Use different `--output-dir` values when comparing images/phases or investigating failed cases.
 
-## Subsequent phases
+## Current status and limitations
 
-- Phase 5: calibrate `BLANK`/`MULTIPLE` handling using real images, faint pencil marks, erasures, and incomplete fills.
-- Phase 6: validate all 50 questions, load/check the answer key, and score correct/incorrect/blank/multiple answers.
-- Phase 7: export to Excel using openpyxl and handle write errors or files that are already open.
-- Phase 8: complete the pipeline, calculate scores on a 10-point scale, handle answer-key errors, and handle incomplete results.
-- Phase 9: Tkinter interface for selecting an image, previewing it, reading the answer sheet, displaying all 50 questions, and exporting to Excel.
-- Phase 10: build a real-image test set, measure recognition accuracy, and tune thresholds; the full product should be accepted only after the functions above have been implemented and tested.
+- The GUI supports image selection, camera capture, answer-key entry/loading,
+  answer display, scoring, and Excel export.
+- The CLI `main.py` focuses on image recognition; its `score_result` is `None`.
+- Automatic printed-form detection has been calibrated against one real template
+  and variants of its image. Other layouts, rotations, curved paper, and complex
+  backgrounds are not guaranteed to work.
+- Inspect the warped image and bubble annotations before using a new layout.

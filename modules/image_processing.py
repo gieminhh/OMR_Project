@@ -85,10 +85,11 @@ def resize_image(image: np.ndarray, max_dimension: int = DEFAULT_MAX_DIMENSION) 
     validate_image(image)
     if not isinstance(max_dimension, int) or max_dimension < 3:
         raise ImageProcessingError("max_dimension phải là số nguyên >= 3.")
-    scale = min(1.0, max_dimension / max(image.shape[:2]))
-    if scale == 1.0:
-        return image.copy()
     height, width = image.shape[:2]
+    largest_dimension = max(height, width)
+    if largest_dimension <= max_dimension:
+        return image.copy()
+    scale = max_dimension / largest_dimension
     size = (max(3, round(width * scale)), max(3, round(height * scale)))
     return cv2.resize(image, size, interpolation=cv2.INTER_AREA)
 

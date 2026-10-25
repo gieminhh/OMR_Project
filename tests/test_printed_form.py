@@ -72,7 +72,10 @@ class PrintedFormTests(unittest.TestCase):
     def test_printed_profile_handles_multiple_without_using_mark_color(self):
         image = self.result["processed_image"].copy()
         config = detect_printed_layout(image)
-        x, y = config.centers[0][0]  # Thêm nét đen vào A; B đã được tô xanh.
+        assert config is not None
+        centers = config.centers
+        assert centers is not None
+        x, y = centers[0][0]  # Thêm nét đen vào A; B đã được tô xanh.
         cv2.circle(image, (x, y), 8, (20, 20, 20), -1)
         answers = analyze_answers(image, config).answers
         expected = EXPECTED.copy()
@@ -81,6 +84,7 @@ class PrintedFormTests(unittest.TestCase):
 
     def test_custom_centers_and_search_cannot_leave_image(self):
         config = detect_printed_layout(self.result["processed_image"])
+        assert config is not None
         with self.assertRaises(AnswerDetectionError):
             validate_config(replace(config, centers=(((1, 1),) * 4,) * 50))
         with self.assertRaises(AnswerDetectionError):

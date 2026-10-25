@@ -26,11 +26,6 @@ _COLOR_HEADER   = "4472C4"   # xanh đậm
 _COLOR_SUMMARY  = "D9E1F2"   # xanh nhạt tổng kết
 
 
-def _thin_border() -> "Border":
-    side = Side(style="thin", color="AAAAAA")
-    return Border(left=side, right=side, top=side, bottom=side)
-
-
 def export_excel(score_result: dict, output_path: str | Path) -> Path:
     """Xuất 50 câu và thống kê ra file .xlsx.
 
@@ -60,7 +55,11 @@ def export_excel(score_result: dict, output_path: str | Path) -> Path:
 
     wb = openpyxl.Workbook()
     ws = wb.active
+    if ws is None:
+        ws = wb.create_sheet()
     ws.title = "Kết quả"
+    side = Side(style="thin", color="AAAAAA")
+    thin_border = Border(left=side, right=side, top=side, bottom=side)
 
     # ── Tiêu đề cột ──────────────────────────────────────────
     headers = ["Câu", "Đáp án HS", "Đáp án đúng", "Kết quả"]
@@ -73,7 +72,7 @@ def export_excel(score_result: dict, output_path: str | Path) -> Path:
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = header_align
-        cell.border = _thin_border()
+        cell.border = thin_border
 
     ws.row_dimensions[1].height = 22
 
@@ -96,7 +95,6 @@ def export_excel(score_result: dict, output_path: str | Path) -> Path:
         row = detail["question"] + 1
         result = detail["result"]
         fill = PatternFill("solid", fgColor=result_color.get(result, "FFFFFF"))
-        border = _thin_border()
 
         values = [
             detail["question"],
@@ -107,7 +105,7 @@ def export_excel(score_result: dict, output_path: str | Path) -> Path:
         for col_idx, val in enumerate(values, start=1):
             cell = ws.cell(row=row, column=col_idx, value=val)
             cell.alignment = center
-            cell.border = border
+            cell.border = thin_border
             if col_idx >= 2:  # tô màu từ cột "Đáp án HS"
                 cell.fill = fill
 
@@ -115,6 +113,7 @@ def export_excel(score_result: dict, output_path: str | Path) -> Path:
     summary_row = score_result["total"] + 3
     summary_fill = PatternFill("solid", fgColor=_COLOR_SUMMARY)
     bold = Font(bold=True, name="Calibri", size=11)
+    summary_align = Alignment(horizontal="center", vertical="center")
 
     summary_data = [
         ("Tổng số câu",      score_result["total"]),
@@ -130,8 +129,8 @@ def export_excel(score_result: dict, output_path: str | Path) -> Path:
         for cell in (label_cell, value_cell):
             cell.font = bold
             cell.fill = summary_fill
-            cell.border = _thin_border()
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = thin_border
+            cell.alignment = summary_align
 
     # Điểm → làm nổi bật
     score_cell = ws.cell(row=summary_row + 5, column=2)

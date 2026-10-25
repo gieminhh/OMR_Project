@@ -54,6 +54,7 @@ class AnswerDetectionTests(unittest.TestCase):
         success, encoded = cv2.imencode(".jpg", blurred, [cv2.IMWRITE_JPEG_QUALITY, 80])
         self.assertTrue(success)
         decoded = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+        assert decoded is not None
         self.assertEqual(detect_answers(detect_and_warp_paper(decoded)), self.expected)
 
     def test_layout_shift_is_rejected(self) -> None:

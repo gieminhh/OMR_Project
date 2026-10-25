@@ -60,7 +60,7 @@ def process_omr(
         warped = original.copy()
         detected = original.copy()
     else:
-        paper_config = PaperConfig(output_size=tuple(layout.paper_size))
+        paper_config = PaperConfig(output_size=(layout.paper_size[0], layout.paper_size[1]))
         corners = find_paper_contour(prepared.resized, paper_config)
         detected = prepared.resized.copy()
         cv2.polylines(detected, [np.rint(corners).astype(np.int32)], True, (0, 180, 0), 3)
@@ -128,6 +128,8 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8")
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8")
     raise SystemExit(main())
+            

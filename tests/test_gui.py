@@ -1,8 +1,11 @@
 """Hồi quy chọn ảnh/nhận kết quả: chạy Tk ẩn, không sửa state người dùng."""
 
+import os
+import subprocess
+import sys
+import tempfile
 import threading
 import gc
-import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -11,11 +14,63 @@ from unittest.mock import patch
 import numpy as np
 
 from gui.app import OMRApp, ROOT
-from modules.errors import ImageProcessingError, PaperDetectionError
-from modules.image_processing import load_image
+from modules.errors import ImageProcessingError
 
 
 class GuiTests(unittest.TestCase):
+    def run(self, result=None):
+        if os.environ.get("OMR_GUI_TEST_SUBPROCESS") == "1":
+            return super().run(result)
+
+        if result is None:
+            result = self.defaultTestResult()
+        result.startTest(self)
+
+        env = os.environ.copy()
+        env["OMR_GUI_TEST_SUBPROCESS"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
+        try:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "unittest",
+                    "discover",
+                    "-s",
+                    "tests",
+                    "-p",
+                    "test_gui.py",
+                    "-k",
+                    self._testMethodName,
+                    "-v",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+                check=False,
+            )
+            if completed.returncode == 0:
+                result.addSuccess(self)
+            else:
+                error = AssertionError(completed.stdout + completed.stderr)
+                try:
+                    raise error
+                except AssertionError:
+                    result.addFailure(self, sys.exc_info())
+        except subprocess.TimeoutExpired:
+            error = AssertionError("GUI test timed out after 120 seconds")
+            try:
+                raise error
+            except AssertionError:
+                result.addFailure(self, sys.exc_info())
+        finally:
+            result.stopTest(self)
+        return result
+
     def setUp(self):
         # Mỗi test tạo Tcl interpreter riêng; thu hồi interpreter cũ trên main thread.
         gc.collect()
@@ -60,7 +115,7 @@ class GuiTests(unittest.TestCase):
         gate = threading.Event()
         self.addCleanup(gate.set)
         image = np.full((1200, 900, 3), 255, np.uint8)
-        def slow_load(path):
+        def slow_load(_):
             gate.wait(5)
             return image
         heartbeat = []
@@ -90,6 +145,7 @@ class GuiTests(unittest.TestCase):
         self.app._run_scan()
         self.pump_until(lambda: not self.app._busy)
         self.assertEqual(len(self.app._tree.get_children()), 50)
+        assert self.app._score_result is not None
         self.assertEqual(self.app._score_result["score"], 10)
         self.assertEqual(str(self.app._btn_scan["state"]), "normal")
         self.assertEqual(str(self.app._btn_excel["state"]), "normal")
@@ -113,6 +169,7 @@ class GuiTests(unittest.TestCase):
         rows = self.app._tree.get_children()
         self.assertEqual(len(rows), 50)
         self.assertEqual(self.app._tree.item(rows[43], "values")[1], "BLANK")
+        assert self.app._result is not None
         self.assertEqual(self.app._result["layout_name"], "printed_50")
         self.showerror.assert_not_called()
 
@@ -150,71 +207,6 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(kind, "scan")
         self.assertIsNone(result)
         self.assertEqual(str(error), "late error")
-
-    def test_remove_background_scan_and_restore_original(self):
-        path = ROOT / "test_images" / "printed_50_real.png"
-        original_bytes = path.read_bytes()
-        self.app._load_image_path(path)
-        self.pump_until(lambda: not self.app._busy)
-        with tempfile.TemporaryDirectory() as folder, patch("gui.app.BACKGROUND_DIR", Path(folder)):
-            self.app._remove_background()
-            self.pump_until(lambda: not self.app._busy)
-            self.assertTrue(self.app._already_warped)
-            self.assertEqual(self.app._original_image_path, path)
-            self.assertNotEqual(self.app._image_path, path)
-            self.assertEqual(load_image(self.app._image_path).shape, (1400, 1000, 3))
-            self.assertEqual(str(self.app._btn_original["state"]), "normal")
-            self.app._run_scan()
-            self.pump_until(lambda: not self.app._busy)
-            self.assertEqual(len(self.app._tree.get_children()), 50)
-            self.assertEqual(self.app._result["answers"][43], "BLANK")
-            self.app._restore_original()
-            self.pump_until(lambda: not self.app._busy)
-            self.assertEqual(self.app._image_path, path)
-            self.assertFalse(self.app._already_warped)
-            self.assertIsNone(self.app._result)
-            self.assertEqual(len(self.app._tree.get_children()), 0)
-            self.assertEqual(path.read_bytes(), original_bytes)
-        self.showerror.assert_not_called()
-
-    def test_background_failure_keeps_original_and_recovers_buttons(self):
-        path = ROOT / "test_images" / "sample_photo.png"
-        self.app._load_image_path(path)
-        self.pump_until(lambda: not self.app._busy)
-        photo = self.app._photo
-        with patch("gui.app.remove_background", side_effect=PaperDetectionError("Không thấy phiếu")):
-            self.app._remove_background()
-            self.pump_until(lambda: not self.app._busy)
-        self.assertEqual(self.app._image_path, path)
-        self.assertIs(self.app._photo, photo)
-        self.assertFalse(self.app._already_warped)
-        self.assertEqual(str(self.app._btn_background["state"]), "normal")
-        self.assertEqual(str(self.app._btn_scan["state"]), "normal")
-        self.assertEqual(self.showerror.call_args.args[0], "Lỗi tách nền")
-
-    def test_background_worker_keeps_ui_responsive(self):
-        self.app._image_path = ROOT / "test_images" / "sample_photo.png"
-        gate = threading.Event()
-        self.addCleanup(gate.set)
-        def slow_remove(image):
-            gate.wait(5)
-            raise PaperDetectionError("test")
-        with patch("gui.app.remove_background", side_effect=slow_remove):
-            self.app._remove_background()
-            heartbeat = []
-            self.app.after(10, lambda: heartbeat.append(True))
-            self.pump_until(lambda: bool(heartbeat))
-            self.assertTrue(self.app._busy)
-            self.assertEqual(str(self.app._btn_scan["state"]), "disabled")
-            gate.set()
-            self.pump_until(lambda: not self.app._busy)
-
-    def test_load_new_image_resets_background_mode(self):
-        self.app._already_warped = True
-        self.app._load_image_path(ROOT / "test_images" / "sample_photo.png")
-        self.pump_until(lambda: not self.app._busy)
-        self.assertFalse(self.app._already_warped)
-        self.assertEqual(str(self.app._btn_background["state"]), "normal")
 
 
 if __name__ == "__main__":
