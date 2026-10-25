@@ -41,6 +41,16 @@ from modules.background_removal import remove_background
 from modules.export_excel import ExportError, export_excel
 from modules.scoring import ScoringError, load_answer_key, score_answers
 from modules.validation import validate_answers
+from modules.session_manager import SessionManager
+from modules.advanced_export import export_session_report
+from modules.bubble_id_detection import detect_sheet_identifiers
+from gui.dialogs import (
+    SessionManagerDialog,
+    StudentManagerDialog,
+    ExamCodeManagerDialog,
+    BatchProcessorDialog,
+    SheetGeneratorDialog,
+)
 
 try:
     from PIL import Image, ImageTk
@@ -608,6 +618,11 @@ class OMRApp(tk.Tk):
         self._score_result: dict | None = None
         self._photo = None
 
+        # Quản lý đợt thi SQLite
+        self.session_manager = SessionManager()
+        self.current_session_code = "01"
+        self._ensure_default_session()
+
         self._build_ui()
         self._busy = False
         self._closed = False
@@ -618,12 +633,69 @@ class OMRApp(tk.Tk):
 
     # ── Xây giao diện ─────────────────────────────────────────────────────────
 
+    def _ensure_default_session(self):
+        """Tự tạo đợt thi '01' mặc định nếu DB chưa có đợt thi nào."""
+        try:
+            sessions = self.session_manager.list_sessions()
+            if not sessions:
+                self.session_manager.create_session(
+                    session_code="01",
+                    name="Đợt thi trắc nghiệm tổng hợp",
+                    subject="Bài thi tổng hợp",
+                    exam_date="2026-10-25",
+                    class_codes=["12A1", "12A2"],
+                )
+                self.current_session_code = "01"
+            else:
+                self.current_session_code = sessions[0]["session_code"]
+        except Exception:
+            self.current_session_code = "01"
+
     def _build_ui(self):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
+        self._build_menubar()
         self._build_toolbar()
         self._build_main()
         self._build_statusbar()
+
+    def _build_menubar(self):
+        menubar = tk.Menu(self)
+
+        # Menu Đợt thi
+        m_session = tk.Menu(menubar, tearoff=0)
+        m_session.add_command(label="Quản lý đợt thi...", command=self._open_session_manager)
+        m_session.add_command(label="Chấm lại toàn bộ đợt thi", command=self._re_grade_current_session)
+        menubar.add_cascade(label="Đợt thi", menu=m_session)
+
+        # Menu Học sinh & Lớp
+        m_student = tk.Menu(menubar, tearoff=0)
+        m_student.add_command(label="Quản lý học sinh & Lớp...", command=self._open_student_manager)
+        menubar.add_cascade(label="Học sinh & Lớp", menu=m_student)
+
+        # Menu Mã đề & Đáp án
+        m_code = tk.Menu(menubar, tearoff=0)
+        m_code.add_command(label="Quản lý mã đề & Đáp án...", command=self._open_exam_code_manager)
+        menubar.add_cascade(label="Mã đề & Đáp án", menu=m_code)
+
+        # Menu Chấm thi
+        m_exam = tk.Menu(menubar, tearoff=0)
+        m_exam.add_command(label="Chấm bài hàng loạt (Batch Processing)...", command=self._open_batch_processor)
+        m_exam.add_command(label="Đọc phiếu hiện tại", command=self._run_scan)
+        menubar.add_cascade(label="Chấm thi", menu=m_exam)
+
+        # Menu Mẫu phiếu
+        m_sheet = tk.Menu(menubar, tearoff=0)
+        m_sheet.add_command(label="Tạo mẫu phiếu A4 / PDF (Template V1/V2)...", command=self._open_sheet_generator)
+        menubar.add_cascade(label="Mẫu phiếu A4", menu=m_sheet)
+
+        # Menu Báo cáo
+        m_report = tk.Menu(menubar, tearoff=0)
+        m_report.add_command(label="Xuất báo cáo đợt thi (6 sheet Excel)...", command=self._export_advanced_excel)
+        m_report.add_command(label="Xuất kết quả bài hiện tại...", command=self._export_excel)
+        menubar.add_cascade(label="Báo cáo", menu=m_report)
+
+        self.config(menu=menubar)
 
     def _build_toolbar(self):
         bar = tk.Frame(self, bg=COLOR_TOOLBAR, pady=8)
@@ -664,18 +736,51 @@ class OMRApp(tk.Tk):
                               self._run_scan, bg="#107C41", width=0)
         self._btn_scan.grid(row=1, column=3, sticky="ew", padx=(4, 12))
 
+        # Hàng nút nâng cao thứ 2 (Chấm hàng loạt, Tạo phiếu PDF, Quản lý học sinh, Báo cáo 6 sheet)
+        self._btn_batch = _btn(bar, "📑  Chấm hàng loạt",
+                               self._open_batch_processor, bg="#0078D7", width=0)
+        self._btn_batch.grid(row=2, column=0, sticky="ew", padx=(12, 4), pady=(6, 0))
+
+        self._btn_sheet_gen = _btn(bar, "🖨️  Tạo phiếu PDF",
+                                   self._open_sheet_generator, bg="#4A607A", width=0)
+        self._btn_sheet_gen.grid(row=2, column=1, sticky="ew", padx=4, pady=(6, 0))
+
+        self._btn_students = _btn(bar, "👥  Học sinh & Lớp",
+                                  self._open_student_manager, bg="#5C5C5C", width=0)
+        self._btn_students.grid(row=2, column=2, sticky="ew", padx=4, pady=(6, 0))
+
+        self._btn_session_rep = _btn(bar, "📊  Báo cáo Excel (6 sheet)",
+                                     self._export_advanced_excel, bg="#1B6C40", width=0)
+        self._btn_session_rep.grid(row=2, column=3, sticky="ew", padx=(4, 12), pady=(6, 0))
+
         # Thông tin đường dẫn / đáp án
         self._lbl_info = tk.Label(header, text="Chưa chọn ảnh", width=1,
                                   bg=COLOR_TOOLBAR, fg="#BDD7EE",
                                   font=("Segoe UI", 9), anchor="w")
         self._lbl_info.grid(row=0, column=1, sticky="ew", padx=8)
 
+        # Badge đợt thi hiện tại
+        sess = self.session_manager.get_session(self.current_session_code)
+        sess_name = sess["name"] if sess else self.current_session_code
+        self._lbl_session_info = tk.Label(
+            header,
+            text=f"Đợt thi: {self.current_session_code} - {sess_name[:16]}",
+            bg="#004E8C",
+            fg="white",
+            font=("Segoe UI", 9, "bold"),
+            padx=8,
+            pady=3,
+            cursor="hand2",
+        )
+        self._lbl_session_info.grid(row=0, column=2, padx=(8, 4))
+        self._lbl_session_info.bind("<Button-1>", lambda e: self._open_session_manager())
+
         # Badge đáp án chuẩn
         self._lbl_key_badge = tk.Label(header, text="Chưa có đáp án chuẩn",
                                        bg="#C05000", fg="white",
                                        font=("Segoe UI", 9, "bold"),
                                        padx=8, pady=3)
-        self._lbl_key_badge.grid(row=0, column=2, padx=(8, 0))
+        self._lbl_key_badge.grid(row=0, column=3, padx=(4, 0))
 
     def _build_main(self):
         paned = tk.PanedWindow(self, orient="horizontal",
@@ -1122,6 +1227,26 @@ class OMRApp(tk.Tk):
                 "#107C41",
             )
 
+        # Lưu tự động vào cơ sở dữ liệu đợt thi hiện tại
+        try:
+            warped = result.get("processed_image")
+            if warped is not None and self._image_path:
+                ids = detect_sheet_identifiers(warped)
+                target_session = self.current_session_code
+                if ids.template_version == "V2":
+                    if ids.session_code is None:
+                        raise OMRError("Không đọc được mã đợt thi trên phiếu; bài chưa được lưu vào đợt thi.")
+                    target_session = ids.session_code
+                self.session_manager.save_exam_result(
+                    session_code=target_session,
+                    image_path=str(self._image_path),
+                    student_answers=answers,
+                    sbd=ids.sbd,
+                    exam_code=ids.exam_code,
+                )
+        except Exception as exc:
+            self._set_status(f"⚠ Chưa lưu vào đợt thi: {exc}", "#C05000")
+
     def _export_excel(self):
         if not self._score_result:
             messagebox.showwarning("Chưa có kết quả", "Hãy đọc phiếu và chấm điểm trước.")
@@ -1230,6 +1355,53 @@ class OMRApp(tk.Tk):
             self._lbl_stats.configure(
                 text=f"  Bỏ trống: {vr['blank_count']}  |  "
                      f"Nhiều đáp án: {vr['multiple_count']}")
+
+    # ── Mở rộng Quản lý Đợt thi, Học sinh, Mã đề, Batch và Mẫu phiếu ────────
+
+    def _open_session_manager(self):
+        SessionManagerDialog(self, self.session_manager, self.current_session_code, self._set_session)
+
+    def _set_session(self, code: str):
+        self.current_session_code = code
+        sess = self.session_manager.get_session(code)
+        name = sess["name"] if sess else code
+        self._lbl_session_info.configure(text=f"Đợt thi: {code} - {name[:16]}")
+        self._set_status(f"Đã chọn đợt thi: {code} ({name})", "#107C41")
+
+    def _open_student_manager(self):
+        StudentManagerDialog(self, self.session_manager)
+
+    def _open_exam_code_manager(self):
+        ExamCodeManagerDialog(self, self.session_manager, self.current_session_code)
+
+    def _open_batch_processor(self):
+        BatchProcessorDialog(self, self.session_manager, self.current_session_code)
+
+    def _open_sheet_generator(self):
+        SheetGeneratorDialog(self)
+
+    def _export_advanced_excel(self):
+        f = filedialog.asksaveasfilename(
+            parent=self,
+            title="Xuất báo cáo đợt thi",
+            defaultextension=".xlsx",
+            filetypes=[("Excel Workbook", "*.xlsx")],
+            initialfile=f"Bao_cao_dot_thi_{self.current_session_code}.xlsx",
+        )
+        if f:
+            try:
+                export_session_report(self.session_manager, self.current_session_code, f)
+                messagebox.showinfo("Thành công", f"Đã xuất báo cáo đợt thi 6 sheet thành công:\n{f}", parent=self)
+            except Exception as e:
+                messagebox.showerror("Lỗi xuất Excel", str(e), parent=self)
+
+    def _re_grade_current_session(self):
+        if messagebox.askyesno("Xác nhận", f"Bạn có chắc muốn chấm lại toàn bộ các bài thi trong đợt '{self.current_session_code}'?", parent=self):
+            try:
+                cnt = self.session_manager.re_grade_session(self.current_session_code)
+                messagebox.showinfo("Hoàn tất", f"Đã chấm lại {cnt} bài thi trong đợt '{self.current_session_code}'.", parent=self)
+            except Exception as e:
+                messagebox.showerror("Lỗi chấm lại", str(e), parent=self)
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────

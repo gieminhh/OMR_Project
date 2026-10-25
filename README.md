@@ -5,6 +5,32 @@ Thank you for the collaboration and support from Ngatran2784
 [VIE] Bản tiếng Việt
 CLI `main.py` vẫn là công cụ nhận diện riêng; `score_result` từ CLI là `None`.
 
+## Sửa chấm hàng loạt và mã đợt thi — 25/10/2026
+
+- Cửa sổ **Chấm hàng loạt** mở được sau khi sửa tham số phông chữ bị trùng.
+- Luồng chấm hàng loạt thử hướng 180° cả khi bộ đọc mốc báo lỗi. Phiếu thực sự
+  thiếu mốc vẫn bị từ chối. Ảnh scan khác kích thước được chuẩn hóa trước khi đọc số.
+- Tự phân biệt mã đợt thi 2/3 chữ số bằng viền ô in và giữ nguyên số 0 đầu
+  (`01` khác `001`). Phiếu V1 dùng đợt đang chọn; phiếu V2 dùng mã trên phiếu.
+- Phiếu V2 bỏ trống/tô nhiều ô ở mã đợt thi được đánh dấu **NEEDS_REVIEW**,
+  giữ kết quả trong danh sách đang mở nhưng chưa lưu vào dữ liệu đợt thi và chưa
+  có trong báo cáo Excel. Cần sửa/chụp lại phiếu rồi thêm lại để chấm; không tự
+  gán vào đợt mặc định. Mã đọc được nhưng chưa tồn tại được báo lỗi.
+- Luồng đọc một ảnh cũng lưu theo mã đợt thi trên phiếu V2 và hiển thị lỗi lưu.
+- Chữ trong khung thông tin trên mẫu phiếu mới không tràn vào vùng tô số.
+  Nên tạo lại mẫu phiếu 3 chữ số nếu mẫu cũ có chữ đè lên các ô.
+- Kiểm thử hồi quy: `python -m unittest tests.test_batch_regressions -v`.
+  Các ca nhận diện bổ sung dùng phiếu tổng hợp và ảnh mô phỏng phối cảnh,
+  chưa thay thế đánh giá trên một bộ ảnh chụp thực tế đa dạng.
+
+Cơ sở dữ liệu đợt thi và bộ ảnh benchmark sinh tự động không được đưa vào Git.
+Để tạo bộ ảnh benchmark tại máy, chạy:
+
+```powershell
+python -c "from modules.test_dataset_generator import generate_benchmark_dataset; generate_benchmark_dataset()"
+python scripts/run_benchmark.py
+```
+
 ## Bố cục cửa sổ co giãn — 20/10/2026
 
 Thanh công cụ, vùng nội dung và thanh dưới cùng được đặt ở ba hàng riêng.
