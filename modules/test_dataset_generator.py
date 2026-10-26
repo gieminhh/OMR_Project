@@ -16,7 +16,7 @@ import random
 import cv2
 import numpy as np
 
-from .sheet_generator import generate_sheet, SHEET_HEIGHT, SHEET_WIDTH
+from .sheet_generator import generate_sheet
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET_DIR = ROOT / "test_images" / "benchmark_dataset"
@@ -30,6 +30,9 @@ def simulate_realistic_photo(
     add_noise: bool = True,
 ) -> np.ndarray:
     """Mô phỏng ảnh chụp thực tế: xoay nhẹ, nghiêng phối cảnh, đổ bóng, nhiễu."""
+    if max_angle_deg < 0:
+        raise ValueError("max_angle_deg phải lớn hơn hoặc bằng 0.")
+
     h, w = sheet.shape[:2]
 
     # 1. Biến dạng phối cảnh nhẹ (chiếu nghiêng góc điện thoại)
@@ -51,6 +54,16 @@ def simulate_realistic_photo(
     bg_color = (rng.randint(60, 140), rng.randint(60, 140), rng.randint(60, 140))
     warped = cv2.warpPerspective(sheet, matrix, (out_w, out_h), borderValue=bg_color)
 
+    angle = rng.uniform(-max_angle_deg, max_angle_deg)
+    if angle:
+        rotation = cv2.getRotationMatrix2D((out_w / 2, out_h / 2), angle, 1.0)
+        warped = cv2.warpAffine(
+            warped,
+            rotation,
+            (out_w, out_h),
+            borderValue=bg_color,
+        )
+
     # 2. Đổ bóng mờ gradient (ví dụ người chụp đứng che một phần ánh đèn)
     if add_shadow:
         gradient = np.linspace(rng.uniform(0.72, 0.88), 1.0, out_w, dtype=np.float32)
@@ -61,7 +74,8 @@ def simulate_realistic_photo(
 
     # 3. Nhiễu hạt cảm biến camera nhẹ
     if add_noise:
-        noise = np.random.normal(0, rng.uniform(2.0, 5.0), warped.shape)
+        noise_rng = np.random.default_rng(rng.getrandbits(64))
+        noise = noise_rng.normal(0, rng.uniform(2.0, 5.0), warped.shape)
         warped = np.clip(warped.astype(np.float32) + noise, 0, 255).astype(np.uint8)
 
     return warped
@@ -77,8 +91,12 @@ def generate_benchmark_dataset(
     exam_codes: list[str] | None = None,
 ) -> dict:
     """Tạo bộ test dataset hoàn chỉnh kèm Ground Truth."""
+    if num_perfect < 0 or num_realistic < 0:
+        raise ValueError("Số lượng ảnh perfect và realistic phải lớn hơn hoặc bằng 0.")
+    if not 0 <= num_special <= 5:
+        raise ValueError("num_special phải nằm trong khoảng từ 0 đến 5.")
+
     rng = random.Random(seed)
-    np.random.seed(seed)
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     images_dir = out_path / "images"
@@ -99,7 +117,7 @@ def generate_benchmark_dataset(
 
     # Danh sách học sinh
     students_list = []
-    for i in range(1, 40):
+    for i in range(1, max(39, num_perfect + num_realistic) + 1):
         sbd_str = f"{i:06d}"
         stu_code = f"HS{i:03d}"
         c_code = "12A1" if i <= 20 else "12A2"
@@ -198,16 +216,28 @@ def generate_benchmark_dataset(
         })
 
     # ── 4. 5 ảnh lỗi hoặc trường hợp đặc biệt (Special / Defects) ─────────────
+    special_ground_truth = []
+
+    def add_special(filename: str, image: np.ndarray, item: dict) -> None:
+        if len(special_ground_truth) >= num_special:
+            stale_image = images_dir / filename
+            if stale_image.exists():
+                stale_image.unlink()
+            return
+        cv2.imwrite(str(images_dir / filename), image)
+        special_ground_truth.append(item)
+
     # Lỗi 1: Thiếu mã đề
     ans1 = [rng.choice(["A", "B", "C", "D"]) for _ in range(50)]
-    s1 = generate_sheet("V2", session_code="01", sbd="000001", exam_code="", answers=ans1)
+    special_session = sessions[0]
+    special_exam = codes[0]
+    s1 = generate_sheet("V2", session_code=special_session, sbd="000001", exam_code="", answers=ans1)
     f1 = "special_01_no_exam_code.png"
-    cv2.imwrite(str(images_dir / f1), s1)
-    ground_truth.append({
+    add_special(f1, s1, {
         "filename": f1,
         "type": "defect",
         "template_version": "V2",
-        "session_code": "01",
+        "session_code": special_session,
         "sbd": "000001",
         "exam_code": None,
         "expected_status": "NEEDS_REVIEW",
@@ -217,16 +247,15 @@ def generate_benchmark_dataset(
 
     # Lỗi 2: Thiếu số báo danh
     ans2 = [rng.choice(["A", "B", "C", "D"]) for _ in range(50)]
-    s2 = generate_sheet("V2", session_code="01", sbd="", exam_code="101", answers=ans2)
+    s2 = generate_sheet("V2", session_code=special_session, sbd="", exam_code=special_exam, answers=ans2)
     f2 = "special_02_no_sbd.png"
-    cv2.imwrite(str(images_dir / f2), s2)
-    ground_truth.append({
+    add_special(f2, s2, {
         "filename": f2,
         "type": "defect",
         "template_version": "V2",
-        "session_code": "01",
+        "session_code": special_session,
         "sbd": None,
-        "exam_code": "101",
+        "exam_code": special_exam,
         "expected_status": "NEEDS_REVIEW",
         "expected_answers": ans2,
         "defects": ["Thiếu số báo danh"],
@@ -237,17 +266,16 @@ def generate_benchmark_dataset(
     ans3[4] = "AB"
     ans3[14] = "CD"
     ans3[24] = "BC"
-    s3 = generate_sheet("V2", session_code="01", sbd="000002", exam_code="102", answers=ans3)
+    s3 = generate_sheet("V2", session_code=special_session, sbd="000002", exam_code=special_exam, answers=ans3)
     f3 = "special_03_multiple_bubbles.png"
-    cv2.imwrite(str(images_dir / f3), s3)
     expected_ans3 = [("MULTIPLE" if len(a) > 1 else a) for a in ans3]
-    ground_truth.append({
+    add_special(f3, s3, {
         "filename": f3,
         "type": "defect",
         "template_version": "V2",
-        "session_code": "01",
+        "session_code": special_session,
         "sbd": "000002",
-        "exam_code": "102",
+        "exam_code": special_exam,
         "expected_status": "SUCCESS",  # Vẫn chấm điểm được với các câu multiple tính là sai
         "expected_answers": expected_ans3,
         "defects": ["Tô nhiều đáp án câu 5, 15, 25"],
@@ -257,38 +285,39 @@ def generate_benchmark_dataset(
     ans4 = [rng.choice(["A", "B", "C", "D"]) for _ in range(50)]
     for i in range(10, 20):
         ans4[i] = "BLANK"
-    s4 = generate_sheet("V2", session_code="02", sbd="000003", exam_code="103", answers=ans4)
+    special_session_2 = sessions[1] if len(sessions) > 1 else special_session
+    special_exam_2 = codes[1] if len(codes) > 1 else special_exam
+    s4 = generate_sheet("V2", session_code=special_session_2, sbd="000003", exam_code=special_exam_2, answers=ans4)
     f4 = "special_04_blank_bubbles.png"
-    cv2.imwrite(str(images_dir / f4), s4)
-    ground_truth.append({
+    add_special(f4, s4, {
         "filename": f4,
         "type": "defect",
         "template_version": "V2",
-        "session_code": "02",
+        "session_code": special_session_2,
         "sbd": "000003",
-        "exam_code": "103",
+        "exam_code": special_exam_2,
         "expected_status": "SUCCESS",
         "expected_answers": ans4,
         "defects": ["Bỏ trống 10 câu từ câu 11 đến 20"],
     })
 
     # Lỗi 5: Mất mốc định vị (bị xóa hoặc che khuất)
-    s5 = generate_sheet("V2", session_code="01", sbd="000004", exam_code="101", answers=["A"] * 50)
+    s5 = generate_sheet("V2", session_code=special_session, sbd="000004", exam_code=special_exam, answers=["A"] * 50)
     # Xóa mốc đen ở giữa
     s5[520:560, 440:480] = 255
     f5 = "special_05_damaged_marker.png"
-    cv2.imwrite(str(images_dir / f5), s5)
-    ground_truth.append({
+    add_special(f5, s5, {
         "filename": f5,
         "type": "defect",
         "template_version": "V2",
-        "session_code": "01",
+        "session_code": special_session,
         "sbd": "000004",
-        "exam_code": "101",
+        "exam_code": special_exam,
         "expected_status": "FAILED",
         "expected_answers": None,
         "defects": ["Mất mốc định vị OMR giữa hai cột"],
     })
+    ground_truth.extend(special_ground_truth)
 
     # ── Xuất Ground Truth JSON & CSV ─────────────────────────────────────────
     gt_json_path = out_path / "ground_truth.json"

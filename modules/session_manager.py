@@ -20,9 +20,8 @@ from .scoring import ScoringError, score_answers, VALID_ANSWERS
 
 try:
     import openpyxl
-    _HAS_OPENPYXL = True
 except ImportError:
-    _HAS_OPENPYXL = False
+    openpyxl = None
 
 DEFAULT_GRADE_SCALE = {
     "gioi": 8.0,
@@ -102,11 +101,17 @@ class SessionManager:
                             (session_code, cc),
                         )
 
-        return self.get_session(session_code)
+        session = self.get_session(session_code)
+        if session is None:
+            raise OMRError(f"Không thể tải đợt thi vừa tạo '{session_code}'.")
+        return session
 
     def update_session(self, session_code: str, **kwargs) -> dict:
         """Cập nhật thông tin đợt thi."""
         session_code = str(session_code).strip()
+        session = self.get_session(session_code)
+        if session is None:
+            raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
         allowed = {"name", "subject", "exam_date", "question_count", "max_score", "status", "grade_scale_config"}
         updates = []
         params = []
@@ -117,7 +122,7 @@ class SessionManager:
                 updates.append(f"{key} = ?")
                 params.append(val)
         if not updates and "class_codes" not in kwargs:
-            return self.get_session(session_code)
+            return session
 
         now = datetime.now().isoformat()
         updates.append("updated_at = ?")
@@ -137,7 +142,10 @@ class SessionManager:
                         conn.execute("INSERT OR IGNORE INTO classes (class_code, class_name) VALUES (?, ?)", (cc, f"Lớp {cc}"))
                         conn.execute("INSERT INTO session_classes (session_code, class_code) VALUES (?, ?)", (session_code, cc))
 
-        return self.get_session(session_code)
+        session = self.get_session(session_code)
+        if session is None:
+            raise OMRError(f"Không thể tải đợt thi vừa cập nhật '{session_code}'.")
+        return session
 
     def get_session(self, session_code: str) -> dict | None:
         """Lấy thông tin đợt thi theo mã."""
@@ -295,7 +303,7 @@ class SessionManager:
 
     def import_students_from_excel(self, file_path: str | Path, default_class: str | None = None) -> int:
         """Nhập danh sách học sinh từ file Excel .xlsx."""
-        if not _HAS_OPENPYXL:
+        if openpyxl is None:
             raise OMRError("Cần thư viện openpyxl để nhập file Excel.")
         path = Path(file_path)
         if not path.is_file():
@@ -303,6 +311,8 @@ class SessionManager:
 
         wb = openpyxl.load_workbook(path, data_only=True)
         ws = wb.active
+        if ws is None:
+            raise OMRError(f"File Excel không có trang tính đang hoạt động: {path}")
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
             return 0
@@ -473,7 +483,7 @@ class SessionManager:
 
     def import_answer_keys_from_excel(self, session_code: str, file_path: str | Path) -> int:
         """Nhập nhiều mã đề và đáp án từ file Excel .xlsx."""
-        if not _HAS_OPENPYXL:
+        if openpyxl is None:
             raise OMRError("Cần openpyxl để nhập file Excel.")
         path = Path(file_path)
         if not path.is_file():
@@ -486,6 +496,8 @@ class SessionManager:
 
         wb = openpyxl.load_workbook(path, data_only=True)
         ws = wb.active
+        if ws is None:
+            raise OMRError(f"File Excel không có trang tính đang hoạt động: {path}")
         rows = list(ws.iter_rows(values_only=True))
         if not rows:
             return 0
@@ -614,7 +626,12 @@ class SessionManager:
             )
             result_id = cur.lastrowid
 
-        return self.get_result_by_id(result_id)
+        if result_id is None:
+            raise OMRError("Không thể xác định ID của kết quả bài thi vừa lưu.")
+        result = self.get_result_by_id(result_id)
+        if result is None:
+            raise OMRError(f"Không thể tải kết quả bài thi vừa lưu (ID {result_id}).")
+        return result
 
     def get_result_by_id(self, result_id: int) -> dict | None:
         """Lấy một kết quả bài thi theo ID."""

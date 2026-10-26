@@ -51,6 +51,10 @@ class SessionManagerTests(unittest.TestCase):
         self.assertEqual(len(search_res), 1)
         self.assertEqual(search_res[0]["session_code"], "02")
 
+    def test_update_missing_session_raises(self):
+        with self.assertRaises(OMRError):
+            self.manager.update_session("missing", name="Không tồn tại")
+
     def test_student_management_and_matching(self):
         self.manager.add_class("12A1", "Lớp 12A1 Tự nhiên")
         self.manager.add_student("HS001", "001234", "Nguyễn Văn A", "12A1")
