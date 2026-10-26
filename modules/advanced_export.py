@@ -173,6 +173,10 @@ def export_session_report(
             cell = ws2.cell(row=r_idx, column=c_idx, value=val)
             cell.alignment = left if c_idx == 3 else center
             cell.border = thin_border
+            # Giữ nguyên số 0 ở đầu cho SBD (cột 2), Đợt thi (cột 5), Mã đề (cột 6)
+            if c_idx in (2, 5, 6) and val != "—":
+                cell.number_format = '@'
+                cell.value = str(val)
             if c_idx == 11 and isinstance(val, (int, float)):
                 cell.font = Font(bold=True, color="C00000", name="Segoe UI")
             if c_idx == 13:
@@ -324,6 +328,9 @@ def export_session_report(
                 cell = ws6.cell(row=r_idx, column=c_idx, value=v)
                 cell.alignment = left if c_idx in (2, 6) else center
                 cell.border = thin_border
+                if c_idx in (3, 4) and v not in ("Thiếu/Không đọc được", "—"):
+                    cell.number_format = '@'
+                    cell.value = str(v)
                 if c_idx == 5:
                     cell.fill = PatternFill("solid", fgColor=fill_c)
                     cell.font = bold

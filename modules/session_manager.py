@@ -12,6 +12,7 @@ import csv
 from datetime import datetime
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from .db import get_connection, init_db, transaction
@@ -148,11 +149,20 @@ class SessionManager:
         return session
 
     def get_session(self, session_code: str) -> dict | None:
-        """Lấy thông tin đợt thi theo mã."""
+        """Lấy thông tin đợt thi theo mã (hỗ trợ chuẩn hóa số 0 ở đầu)."""
         session_code = str(session_code).strip()
         conn = get_connection(self.db_path)
         cur = conn.execute("SELECT * FROM exam_sessions WHERE session_code = ?", (session_code,))
         row = cur.fetchone()
+        if not row and session_code.isdigit():
+            # Thử tìm dạng zfill hoặc lstrip nếu mã có dạng số
+            for alt in [session_code.zfill(2), session_code.zfill(3), session_code.lstrip("0")]:
+                if alt and alt != session_code:
+                    cur = conn.execute("SELECT * FROM exam_sessions WHERE session_code = ?", (alt,))
+                    row = cur.fetchone()
+                    if row:
+                        session_code = alt
+                        break
         if not row:
             return None
         res = dict(row)
@@ -239,25 +249,39 @@ class SessionManager:
         return {"student_code": student_code, "sbd": sbd, "full_name": full_name, "class_code": class_code}
 
     def get_student_by_sbd(self, sbd: str, session_code: str | None = None) -> dict | None:
-        """Tìm học sinh theo số báo danh (ưu tiên trong các lớp thuộc đợt thi nếu có)."""
+        """Tìm học sinh theo số báo danh (ưu tiên trong các lớp thuộc đợt thi nếu có, giữ và chuẩn hóa số 0)."""
         sbd = str(sbd).strip()
         conn = get_connection(self.db_path)
+        candidates = [sbd]
+        if sbd.isdigit():
+            z = sbd.zfill(6)
+            if z not in candidates:
+                candidates.append(z)
+            ns = sbd.lstrip("0")
+            if ns and ns not in candidates:
+                candidates.append(ns)
+
         if session_code:
-            cur = conn.execute(
-                """
-                SELECT s.* FROM students s
-                INNER JOIN session_classes sc ON s.class_code = sc.class_code
-                WHERE s.sbd = ? AND sc.session_code = ?
-                """,
-                (sbd, session_code),
-            )
+            for cand in candidates:
+                cur = conn.execute(
+                    """
+                    SELECT s.* FROM students s
+                    INNER JOIN session_classes sc ON s.class_code = sc.class_code
+                    WHERE s.sbd = ? AND sc.session_code = ?
+                    """,
+                    (cand, session_code),
+                )
+                row = cur.fetchone()
+                if row:
+                    return dict(row)
+
+        for cand in candidates:
+            cur = conn.execute("SELECT * FROM students WHERE sbd = ?", (cand,))
             row = cur.fetchone()
             if row:
                 return dict(row)
 
-        cur = conn.execute("SELECT * FROM students WHERE sbd = ?", (sbd,))
-        row = cur.fetchone()
-        return dict(row) if row else None
+        return None
 
     def list_students(self, class_code: str | None = None, search: str | None = None) -> list[dict]:
         """Liệt kê danh sách học sinh theo lớp hoặc tìm kiếm."""
@@ -425,21 +449,28 @@ class SessionManager:
             result.append(d)
         return result
 
-    def import_answer_keys_from_csv(self, session_code: str, file_path: str | Path) -> int:
+    def import_answer_keys_from_csv(self, session_code: str | None, file_path: str | Path) -> int:
         """Nhập nhiều mã đề và đáp án từ file CSV.
 
-        Định dạng CSV:
-        Cột đầu là exam_code (hoặc ma_de). Các cột tiếp theo là 1, 2, ..., 50 hoặc câu 1, câu 2...
-        hoặc format dòng: exam_code, question, answer.
+        Hỗ trợ các định dạng:
+        - 4 cột: session_code, exam_code, question, answer
+        - 3 cột: exam_code, question, answer
+        - 2 cột: question, answer (tự suy ra mã đề từ tên file hoặc tham số)
+        - Dòng ngang: exam_code, 1, 2, ..., 50
         """
         path = Path(file_path)
         if not path.is_file():
             raise OMRError(f"File CSV không tồn tại: {path}")
 
-        sess = self.get_session(session_code)
-        if not sess:
-            raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
-        q_count = sess["question_count"]
+        # Tự suy đoán mã đề hoặc đợt thi từ tên file nếu chưa có
+        inferred_session = session_code
+        inferred_exam = None
+        match_sess = re.search(r"dot_?(\d+)", path.stem, re.IGNORECASE)
+        if match_sess and not inferred_session:
+            inferred_session = match_sess.group(1).zfill(2)
+        match_code = re.search(r"ma_?(\d+)", path.stem, re.IGNORECASE)
+        if match_code:
+            inferred_exam = match_code.group(1)
 
         count = 0
         with open(path, mode="r", encoding="utf-8-sig") as f:
@@ -448,37 +479,170 @@ class SessionManager:
             if not header:
                 return 0
 
-            # Trường hợp 1: Dòng ngang (cột 1 là exam_code, 50 cột tiếp theo là đáp án)
-            if len(header) >= q_count + 1:
-                for row in reader:
+            # Xác định vị trí các cột nếu có header
+            col_sess_idx = -1
+            col_exam_idx = -1
+            col_q_idx = -1
+            col_ans_idx = -1
+            for idx, col in enumerate(header):
+                if col in ("session_code", "dot_thi", "ma_dot_thi", "đợt thi", "mã đợt thi"):
+                    col_sess_idx = idx
+                elif col in ("exam_code", "ma_de", "mã đề", "made"):
+                    col_exam_idx = idx
+                elif col in ("question", "cau", "so_cau", "câu", "số thứ tự", "stt"):
+                    col_q_idx = idx
+                elif col in ("answer", "dap_an", "đáp án", "dapan"):
+                    col_ans_idx = idx
+
+            rows = list(reader)
+
+            # Trường hợp dòng ngang: cột 1 là exam_code, các cột tiếp theo là đáp án 1..50
+            if len(header) >= 51 and col_q_idx == -1:
+                sess_target = inferred_session or session_code
+                if not sess_target:
+                    raise OMRError("Cần cung cấp mã đợt thi để nhập đáp án.")
+                sess = self.get_session(sess_target)
+                if not sess:
+                    raise OMRError(f"Đợt thi '{sess_target}' không tồn tại.")
+                q_count = sess["question_count"]
+                for row in rows:
                     if not row or not any(row):
                         continue
                     ecode = str(row[0]).strip()
                     if ecode.endswith(".0"):
                         ecode = ecode[:-2]
-                    ans = [str(x).strip().upper() for x in row[1 : q_count + 1]]
+                    ans = [str(x).strip().upper() for x in row[1 : q_count + 1] if str(x).strip()]
                     if len(ans) == q_count and all(a in VALID_ANSWERS for a in ans):
-                        self.set_answer_key(session_code, ecode, ans, source="csv")
+                        self.set_answer_key(sess_target, ecode, ans, source="csv")
                         count += 1
-            else:
-                # Trường hợp 2: Bảng dọc (exam_code, question, answer)
-                rows = list(reader)
-                grouped: dict[str, dict[int, str]] = {}
-                for r in rows:
-                    if len(r) >= 3:
-                        ecode = str(r[0]).strip()
-                        try:
-                            q_idx = int(r[1])
-                            ans = str(r[2]).strip().upper()
-                            if ans in VALID_ANSWERS:
-                                grouped.setdefault(ecode, {})[q_idx] = ans
-                        except ValueError:
-                            continue
-                for ecode, ans_map in grouped.items():
-                    if len(ans_map) == q_count and all(i in ans_map for i in range(1, q_count + 1)):
-                        ans_list = [ans_map[i] for i in range(1, q_count + 1)]
-                        self.set_answer_key(session_code, ecode, ans_list, source="csv")
+                return count
+
+            # Trường hợp bảng dọc: nhóm theo (session_code, exam_code) -> {question: answer}
+            grouped: dict[tuple[str, str], dict[int, str]] = {}
+            for r in rows:
+                if not r or not any(r):
+                    continue
+                # Trích xuất session, exam, q, ans
+                s_val = None
+                e_val = None
+                q_val = None
+                a_val = None
+
+                if col_sess_idx != -1 and len(r) > col_sess_idx:
+                    s_val = str(r[col_sess_idx]).strip()
+                if col_exam_idx != -1 and len(r) > col_exam_idx:
+                    e_val = str(r[col_exam_idx]).strip()
+                if col_q_idx != -1 and len(r) > col_q_idx:
+                    q_val = str(r[col_q_idx]).strip()
+                if col_ans_idx != -1 and len(r) > col_ans_idx:
+                    a_val = str(r[col_ans_idx]).strip().upper()
+
+                # Nếu không tìm thấy bằng header, dựa vào số cột
+                if col_ans_idx == -1:
+                    if len(r) >= 4:
+                        s_val = str(r[0]).strip()
+                        e_val = str(r[1]).strip()
+                        q_val = str(r[2]).strip()
+                        a_val = str(r[3]).strip().upper()
+                    elif len(r) == 3:
+                        e_val = str(r[0]).strip()
+                        q_val = str(r[1]).strip()
+                        a_val = str(r[2]).strip().upper()
+                    elif len(r) == 2:
+                        q_val = str(r[0]).strip()
+                        a_val = str(r[1]).strip().upper()
+
+                s_val = s_val or inferred_session or session_code
+                e_val = e_val or inferred_exam
+                if e_val and e_val.endswith(".0"):
+                    e_val = e_val[:-2]
+
+                if not s_val or not e_val or not q_val or not a_val:
+                    continue
+
+                try:
+                    q_int = int(q_val)
+                    if a_val in VALID_ANSWERS:
+                        grouped.setdefault((s_val, e_val), {})[q_int] = a_val
+                except ValueError:
+                    continue
+
+            for (s_code, e_code), ans_map in grouped.items():
+                sess = self.get_session(s_code)
+                if not sess:
+                    continue
+                q_count = sess["question_count"]
+                if len(ans_map) == q_count and all(i in ans_map for i in range(1, q_count + 1)):
+                    ans_list = [ans_map[i] for i in range(1, q_count + 1)]
+                    self.set_answer_key(s_code, e_code, ans_list, source="csv")
+                    count += 1
+
+        return count
+
+    def import_answer_keys_from_json(self, file_path: str | Path, default_session_code: str | None = None) -> int:
+        """Nhập bộ đáp án từ file JSON (hỗ trợ JSON tổng hợp đa đợt thi hoặc đơn lẻ)."""
+        path = Path(file_path)
+        if not path.is_file():
+            raise OMRError(f"File JSON không tồn tại: {path}")
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise OMRError(f"Không thể đọc file JSON: {exc}") from exc
+
+        count = 0
+        # Dạng 1: {"01": {"101": ["A", ...], "102": [...]}, "02": {...}}
+        if isinstance(data, dict):
+            # Kiểm tra xem có phải dạng nested session -> exam -> answers
+            first_val = next(iter(data.values())) if data else None
+            if isinstance(first_val, dict):
+                for s_code, exams in data.items():
+                    s_code = str(s_code).strip()
+                    sess = self.get_session(s_code)
+                    if not sess:
+                        continue
+                    if isinstance(exams, dict):
+                        for e_code, ans_list in exams.items():
+                            if isinstance(ans_list, list) and len(ans_list) == sess["question_count"]:
+                                self.set_answer_key(s_code, str(e_code).strip(), ans_list, source="json")
+                                count += 1
+                return count
+
+            # Dạng 2: {"101": ["A", ...], "102": [...]} với default_session_code
+            if isinstance(first_val, list):
+                s_code = default_session_code
+                if not s_code:
+                    raise OMRError("Cần chỉ định mã đợt thi khi nhập file JSON chứa danh sách mã đề.")
+                sess = self.get_session(s_code)
+                if not sess:
+                    raise OMRError(f"Đợt thi '{s_code}' không tồn tại.")
+                for e_code, ans_list in data.items():
+                    if isinstance(ans_list, list) and len(ans_list) == sess["question_count"]:
+                        self.set_answer_key(s_code, str(e_code).strip(), ans_list, source="json")
                         count += 1
+                return count
+
+            # Dạng 3: {"session_code": "01", "exam_code": "101", "answers": [...]}
+            if "answers" in data and ("exam_code" in data or "session_code" in data):
+                s_code = str(data.get("session_code") or default_session_code or "").strip()
+                e_code = str(data.get("exam_code") or "").strip()
+                ans_list = data["answers"]
+                if s_code and e_code and isinstance(ans_list, list):
+                    self.set_answer_key(s_code, e_code, ans_list, source="json")
+                    return 1
+
+        # Dạng 4: List of dicts [{"session_code": "01", "exam_code": "101", "answers": [...]}, ...]
+        elif isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict) and "answers" in item:
+                    s_code = str(item.get("session_code") or default_session_code or "").strip()
+                    e_code = str(item.get("exam_code") or "").strip()
+                    ans_list = item["answers"]
+                    if s_code and e_code and isinstance(ans_list, list):
+                        sess = self.get_session(s_code)
+                        if sess and len(ans_list) == sess["question_count"]:
+                            self.set_answer_key(s_code, e_code, ans_list, source="json")
+                            count += 1
+
         return count
 
     def import_answer_keys_from_excel(self, session_code: str, file_path: str | Path) -> int:
@@ -539,7 +703,8 @@ class SessionManager:
 
         sbd = str(sbd).strip() if sbd else None
         exam_code = str(exam_code).strip() if exam_code else None
-        image_path = str(image_path)
+        canonical_path = Path(image_path).resolve().as_posix()
+        fname = Path(image_path).name
         now = datetime.now().isoformat()
 
         # Đối chiếu học sinh nếu chưa có thông tin
@@ -565,12 +730,32 @@ class SessionManager:
             status = "NEEDS_REVIEW"
             review_reasons.append(f"Không tìm thấy học sinh với SBD '{sbd}' trong danh sách.")
 
-        # Kiểm tra trùng SBD trong đợt thi
+        # Kiểm tra bài đã tồn tại trong đợt thi (hỗ trợ cả đường dẫn tương đối, tuyệt đối và dấu gạch chéo)
+        conn = get_connection(self.db_path)
+        cur = conn.execute(
+            """
+            SELECT id, image_path FROM exam_results
+            WHERE session_code = ? AND (
+                image_path = ? OR
+                image_path = ? OR
+                image_path LIKE ?
+            )
+            ORDER BY id DESC LIMIT 1
+            """,
+            (session_code, canonical_path, str(image_path), f"%{fname}"),
+        )
+        existing_row = cur.fetchone()
+        existing_id = existing_row["id"] if existing_row else None
+
+        # Kiểm tra trùng SBD trong đợt thi (loại trừ chính bài đang chấm lại)
         if sbd:
-            conn = get_connection(self.db_path)
             cur = conn.execute(
-                "SELECT id, image_path FROM exam_results WHERE session_code = ? AND sbd = ? AND status != 'FAILED'",
-                (session_code, sbd),
+                """
+                SELECT id, image_path FROM exam_results
+                WHERE session_code = ? AND sbd = ? AND status != 'FAILED'
+                AND id != ? AND image_path != ? AND image_path != ? AND image_path NOT LIKE ?
+                """,
+                (session_code, sbd, existing_id or -1, canonical_path, str(image_path), f"%{fname}"),
             )
             existing = cur.fetchall()
             if existing:
@@ -592,39 +777,73 @@ class SessionManager:
         review_reason_str = "; ".join(review_reasons) if review_reasons else None
 
         with transaction(self.db_path) as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO exam_results (
-                    session_code, image_path, student_code, sbd, student_name, class_code,
-                    exam_code, student_answers_json, score, correct_count, wrong_count,
-                    blank_count, multiple_count, total_questions, details_json,
-                    classification, status, review_reason, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    session_code,
-                    image_path,
-                    student_code,
-                    sbd,
-                    student_name,
-                    class_code,
-                    exam_code,
-                    json.dumps(student_answers),
-                    score_res["score"] if score_res else None,
-                    score_res["correct_count"] if score_res else None,
-                    score_res["wrong_count"] if score_res else None,
-                    score_res["blank_count"] if score_res else None,
-                    score_res["multiple_count"] if score_res else None,
-                    sess["question_count"],
-                    json.dumps(score_res["details"]) if score_res else None,
-                    classification,
-                    status,
-                    review_reason_str,
-                    now,
-                    now,
-                ),
-            )
-            result_id = cur.lastrowid
+            if existing_id is not None:
+                conn.execute(
+                    """
+                    UPDATE exam_results SET
+                        student_code = ?, sbd = ?, student_name = ?, class_code = ?,
+                        exam_code = ?, student_answers_json = ?, score = ?, correct_count = ?,
+                        wrong_count = ?, blank_count = ?, multiple_count = ?, total_questions = ?,
+                        details_json = ?, classification = ?, status = ?, review_reason = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        student_code,
+                        sbd,
+                        student_name,
+                        class_code,
+                        exam_code,
+                        json.dumps(student_answers),
+                        score_res["score"] if score_res else None,
+                        score_res["correct_count"] if score_res else None,
+                        score_res["wrong_count"] if score_res else None,
+                        score_res["blank_count"] if score_res else None,
+                        score_res["multiple_count"] if score_res else None,
+                        sess["question_count"],
+                        json.dumps(score_res["details"]) if score_res else None,
+                        classification,
+                        status,
+                        review_reason_str,
+                        now,
+                        existing_id,
+                    ),
+                )
+                result_id = existing_id
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT INTO exam_results (
+                        session_code, image_path, student_code, sbd, student_name, class_code,
+                        exam_code, student_answers_json, score, correct_count, wrong_count,
+                        blank_count, multiple_count, total_questions, details_json,
+                        classification, status, review_reason, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session_code,
+                        canonical_path,
+                        student_code,
+                        sbd,
+                        student_name,
+                        class_code,
+                        exam_code,
+                        json.dumps(student_answers),
+                        score_res["score"] if score_res else None,
+                        score_res["correct_count"] if score_res else None,
+                        score_res["wrong_count"] if score_res else None,
+                        score_res["blank_count"] if score_res else None,
+                        score_res["multiple_count"] if score_res else None,
+                        sess["question_count"],
+                        json.dumps(score_res["details"]) if score_res else None,
+                        classification,
+                        status,
+                        review_reason_str,
+                        now,
+                        now,
+                    ),
+                )
+                result_id = cur.lastrowid
 
         if result_id is None:
             raise OMRError("Không thể xác định ID của kết quả bài thi vừa lưu.")

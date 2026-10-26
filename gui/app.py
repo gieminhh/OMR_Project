@@ -677,6 +677,7 @@ class OMRApp(tk.Tk):
         # Menu Mã đề & Đáp án
         m_code = tk.Menu(menubar, tearoff=0)
         m_code.add_command(label="Quản lý mã đề & Đáp án...", command=self._open_exam_code_manager)
+        m_code.add_command(label="Nạp bộ dữ liệu mẫu (Demo)...", command=self._load_demo_data_ui)
         menubar.add_cascade(label="Mã đề & Đáp án", menu=m_code)
 
         # Menu Chấm thi
@@ -962,9 +963,10 @@ class OMRApp(tk.Tk):
             self._lbl_info.configure(text="Chưa chọn ảnh")
 
         # Badge đáp án chuẩn
-        if has_key:
-            self._lbl_key_badge.configure(
-                text="✓ Có đáp án chuẩn", bg="#107C41")
+        session_codes = self.session_manager.list_exam_codes(self.current_session_code)
+        if has_key or session_codes:
+            txt = f"✓ Có đáp án ({len(session_codes)} mã đề)" if session_codes else "✓ Có đáp án chuẩn"
+            self._lbl_key_badge.configure(text=txt, bg="#107C41")
         else:
             self._lbl_key_badge.configure(
                 text="Chưa có đáp án chuẩn", bg="#C05000")
@@ -1111,12 +1113,17 @@ class OMRApp(tk.Tk):
         super().destroy()
 
     def _show_key_menu(self):
-        """Menu nhỏ: Load từ file / Xem đáp án hiện tại."""
+        """Menu nhỏ: Quản lý mã đề / Load từ file / Nạp demo."""
         menu = tk.Menu(self, tearoff=0)
-        menu.add_command(label="📁  Load đáp án từ file JSON…",
+        menu.add_command(label="📋  Quản lý Mã đề & Đáp án đợt thi…",
+                         command=self._open_exam_code_manager)
+        menu.add_command(label="🎯  Nạp dữ liệu mẫu (Demo)…",
+                         command=self._load_demo_data_ui)
+        menu.add_separator()
+        menu.add_command(label="📁  Load file đáp án JSON đơn lẻ…",
                          command=self._pick_key_file)
-        menu.add_command(label="📋  Nhập / chỉnh đáp án chuẩn…",
-                         command=self._open_key_editor)
+        menu.add_command(label="✏️   Chỉnh sửa 50 đáp án đơn lẻ…",
+                         command=self._open_key_editor_single)
         if self._answer_key:
             menu.add_separator()
             menu.add_command(label="💾  Lưu đáp án ra file JSON…",
@@ -1128,30 +1135,41 @@ class OMRApp(tk.Tk):
         finally:
             menu.grab_release()
 
-    def _pick_key_file(self):
-        path = filedialog.askopenfilename(
-            title="Chọn file đáp án chuẩn (JSON)",
-            filetypes=[("JSON", "*.json"), ("Tất cả", "*.*")],
-        )
-        if not path:
-            return
-        try:
-            key = load_answer_key(path)
-            self._answer_key = key
-            self._refresh_ui()
-            if self._save_state():
-                self._set_status(f"✅ Đã load đáp án chuẩn từ: {Path(path).name}", "#107C41")
-        except (ScoringError, OMRError) as exc:
-            messagebox.showerror("Lỗi đáp án chuẩn", str(exc))
-
     def _open_key_editor(self):
-        """Mở dialog nhập/chỉnh đáp án chuẩn."""
+        """Mở dialog Quản lý Mã đề & Đáp án của đợt thi."""
+        self._open_exam_code_manager()
+
+    def _open_key_editor_single(self):
+        """Mở dialog chỉnh sửa 50 đáp án đơn lẻ."""
         dlg = AnswerKeyDialog(self, self._answer_key)
         if dlg.answers is not None:
             self._answer_key = dlg.answers
             self._refresh_ui()
             if self._save_state():
                 self._set_status("✅ Đáp án chuẩn đã được lưu tự động.", "#107C41")
+
+    def _load_demo_data_ui(self):
+        """Nạp dữ liệu mẫu Demo từ giao diện chính."""
+        from modules.demo_loader import load_demo_data
+        confirm = messagebox.askyesno(
+            "Nạp dữ liệu mẫu (Demo)",
+            "Bạn có muốn nạp bộ dữ liệu mẫu (2 đợt thi 01-02, 4 lớp học, 43 học sinh và 8 bộ đáp án chuẩn 101-104)?\n\n"
+            "Dữ liệu của bạn sẽ được bảo toàn nguyên vẹn.",
+            parent=self,
+        )
+        if confirm:
+            stats = load_demo_data(self.session_manager)
+            self._refresh_ui()
+            self._set_status(f"✅ Đã nạp dữ liệu Demo ({stats['sessions']} đợt, {stats['exam_codes']} mã đề)!", "#107C41")
+            messagebox.showinfo(
+                "Nạp Demo Hoàn tất",
+                f"Đã nạp thành công:\n"
+                f"- Đợt thi: {stats['sessions']}\n"
+                f"- Lớp học: {stats['classes']}\n"
+                f"- Học sinh: {stats['students']}\n"
+                f"- Mã đề: {stats['exam_codes']}",
+                parent=self,
+            )
 
     def _save_key_to_file(self):
         if not self._answer_key:
@@ -1220,9 +1238,27 @@ class OMRApp(tk.Tk):
             return
 
         score_result = None
-        if self._answer_key:
+        key_to_use = self._answer_key
+
+        warped = result.get("processed_image")
+        ids = None
+        if warped is not None:
             try:
-                score_result = score_answers(answers, self._answer_key)
+                ids = detect_sheet_identifiers(warped)
+            except Exception:
+                ids = None
+
+        # Tự động lấy đáp án chuẩn từ đợt thi theo mã đề nếu chưa nạp key lẻ
+        if not key_to_use and ids and ids.exam_code:
+            target_sess = ids.session_code if (ids.template_version == "V2" and ids.session_code) else self.current_session_code
+            if target_sess:
+                key_to_use = self.session_manager.get_answer_key(target_sess, ids.exam_code)
+                if not key_to_use and target_sess != self.current_session_code:
+                    key_to_use = self.session_manager.get_answer_key(self.current_session_code, ids.exam_code)
+
+        if key_to_use:
+            try:
+                score_result = score_answers(answers, key_to_use)
                 self._score_result = score_result
             except (ScoringError, OMRError) as exc:
                 messagebox.showwarning(
@@ -1250,9 +1286,7 @@ class OMRApp(tk.Tk):
 
         # Lưu tự động vào cơ sở dữ liệu đợt thi hiện tại
         try:
-            warped = result.get("processed_image")
-            if warped is not None and self._image_path:
-                ids = detect_sheet_identifiers(warped)
+            if self._image_path and ids is not None:
                 target_session = self.current_session_code
                 if ids.template_version == "V2":
                     if ids.session_code is None:

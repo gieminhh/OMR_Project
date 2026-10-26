@@ -176,6 +176,98 @@ def process_single_sheet(
     return item
 
 
+def read_answer_key_from_image(
+    image_path: str | Path,
+    allow_rotation_correction: bool = True,
+) -> dict:
+    """Đọc mã đề và 50 đáp án chuẩn từ ảnh phiếu đáp án OMR.
+
+    Hoàn toàn độc lập:
+    - KHÔNG lưu kết quả bài thi của học sinh.
+    - KHÔNG phát sinh bản ghi điểm nào trong database.
+    - Phát hiện đáp án bỏ trống hoặc tô nhiều ô.
+    """
+    path = Path(image_path)
+    res = {
+        "image_path": path,
+        "filename": path.name,
+        "exam_code": None,
+        "session_code": None,
+        "template_version": "V2",
+        "answers": [],
+        "is_valid": False,
+        "blank_questions": [],
+        "multiple_questions": [],
+        "review_reasons": [],
+        "error_message": None,
+        "annotated_image": None,
+    }
+
+    try:
+        original = load_image(path)
+        prepared = preprocess_image(original)
+
+        warped = None
+        if original.shape[:2] == (1400, 1000):
+            warped = original.copy()
+        else:
+            paper_cfg = PaperConfig(output_size=(1000, 1400))
+            try:
+                corners = find_paper_contour(prepared.resized, paper_cfg)
+                warped = four_point_transform(prepared.resized, corners, paper_cfg.output_size)
+            except PaperDetectionError:
+                resized_direct = cv2.resize(original, (1000, 1400))
+                oriented, direct_layout = _orient_printed_sheet(resized_direct, allow_rotation_correction)
+                if direct_layout is not None:
+                    warped = oriented
+                else:
+                    raise
+
+        warped, layout_cfg = _orient_printed_sheet(warped, allow_rotation_correction)
+        if layout_cfg is None:
+            try:
+                layout_cfg = load_layout(DEFAULT_LAYOUT_PATH)
+            except Exception:
+                raise OMRError("Không nhận diện được mẫu phiếu in hoặc mốc OMR trên ảnh.")
+
+        identifiers = detect_sheet_identifiers(warped)
+        res["exam_code"] = identifiers.exam_code
+        res["session_code"] = identifiers.session_code
+        res["template_version"] = identifiers.template_version
+        res["annotated_image"] = identifiers.annotated_image
+
+        ans_detection = analyze_answers(warped, layout_cfg, question_count=50)
+        res["answers"] = ans_detection.answers
+
+        for q_idx, ans in enumerate(ans_detection.answers, start=1):
+            if ans == "BLANK":
+                res["blank_questions"].append(q_idx)
+            elif ans == "MULTIPLE":
+                res["multiple_questions"].append(q_idx)
+
+        review_reasons = []
+        if not identifiers.exam_code:
+            review_reasons.append("Chưa nhận diện được mã đề trên phiếu.")
+        if res["blank_questions"]:
+            review_reasons.append(f"Có {len(res['blank_questions'])} câu chưa tô ({', '.join(map(str, res['blank_questions'][:10]))})")
+        if res["multiple_questions"]:
+            review_reasons.append(f"Có {len(res['multiple_questions'])} câu tô nhiều ô ({', '.join(map(str, res['multiple_questions'][:10]))})")
+
+        res["review_reasons"] = review_reasons
+        res["is_valid"] = (
+            bool(identifiers.exam_code)
+            and len(res["answers"]) == 50
+            and not res["blank_questions"]
+            and not res["multiple_questions"]
+        )
+
+    except Exception as exc:
+        res["error_message"] = str(exc)
+        res["is_valid"] = False
+
+    return res
+
+
 class BatchProcessor:
     """Quản lý hàng đợi và tiến trình chấm hàng loạt."""
 
@@ -230,6 +322,19 @@ class BatchProcessor:
         with self._lock:
             if not self._is_running:
                 self.items.clear()
+
+    def reset_for_retry(self, include_needs_review: bool = True) -> int:
+        """Đặt lại trạng thái QUEUED cho các bài lỗi hoặc cần kiểm tra để chấm lại."""
+        count = 0
+        targets = ("FAILED", "NEEDS_REVIEW") if include_needs_review else ("FAILED",)
+        with self._lock:
+            for item in self.items:
+                if item.status in targets:
+                    item.status = "QUEUED"
+                    item.error_message = None
+                    item.review_reasons = []
+                    count += 1
+        return count
 
     def stop(self) -> None:
         """Yêu cầu dừng tiến trình chấm hàng loạt."""

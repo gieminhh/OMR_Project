@@ -17,8 +17,9 @@ import numpy as np
 from PIL import Image, ImageTk
 
 from modules.advanced_export import export_session_report
-from modules.batch_processor import BatchProcessor, BatchItem
+from modules.batch_processor import BatchProcessor, BatchItem, read_answer_key_from_image
 from modules.bubble_id_detection import detect_sheet_identifiers
+from modules.demo_loader import load_demo_data
 from modules.errors import OMRError
 from modules.session_manager import SessionManager, DEFAULT_GRADE_SCALE
 from modules.sheet_generator import generate_sheet, export_sheet_to_pdf, export_sheet_to_image
@@ -348,12 +349,167 @@ class StudentManagerDialog(tk.Toplevel):
 
 # ── 3. DIALOG QUẢN LÝ MÃ ĐỀ & ĐÁP ÁN ─────────────────────────────────────────
 
+class ReviewScannedKeysDialog(tk.Toplevel):
+    """Cửa sổ xem trước, chỉnh sửa và xác nhận đáp án quét từ ảnh trước khi lưu."""
+    def __init__(self, parent, session_manager: SessionManager, session_code: str, scanned_items: list[dict], on_saved_callback: Callable | None = None):
+        super().__init__(parent)
+        self.title("Xác nhận bộ đáp án nhận diện từ ảnh")
+        self.geometry("860x520")
+        self.minsize(720, 400)
+        self.configure(bg=COLOR_BG)
+        self.grab_set()
+
+        self.mgr = session_manager
+        self.session_code = session_code
+        self.scanned_items = scanned_items
+        self.on_saved_callback = on_saved_callback
+
+        self._build_ui()
+
+    def _build_ui(self):
+        header_frame = tk.Frame(self, bg=COLOR_BG, padx=12, pady=10)
+        header_frame.pack(fill="x")
+
+        lbl_desc = tk.Label(
+            header_frame,
+            text=f"Kiểm tra và xác nhận các bộ đáp án quét được cho đợt thi: {self.session_code}\n"
+                 f"(Mỗi ảnh đại diện cho 1 mã đề chuẩn, KHÔNG tạo bài thi học sinh).",
+            font=("Segoe UI", 10, "bold"),
+            bg=COLOR_BG,
+            justify="left",
+        )
+        lbl_desc.pack(anchor="w")
+
+        # Bảng danh sách ảnh đáp án
+        table_frame = tk.Frame(self, bg=COLOR_BG, padx=12, pady=4)
+        table_frame.pack(fill="both", expand=True)
+
+        cols = ("file", "code", "sess_detected", "valid_count", "warning", "preview")
+        self.tree = ttk.Treeview(table_frame, columns=cols, show="headings", selectmode="browse")
+        self.tree.heading("file", text="Tên file ảnh")
+        self.tree.heading("code", text="Mã đề")
+        self.tree.heading("sess_detected", text="Đợt trên phiếu")
+        self.tree.heading("valid_count", text="Số câu hợp lệ")
+        self.tree.heading("warning", text="Cảnh báo")
+        self.tree.heading("preview", text="Xem trước đáp án")
+
+        self.tree.column("file", width=140)
+        self.tree.column("code", width=80, anchor="center")
+        self.tree.column("sess_detected", width=90, anchor="center")
+        self.tree.column("valid_count", width=90, anchor="center")
+        self.tree.column("warning", width=180)
+        self.tree.column("preview", width=240)
+
+        sb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+        self._populate_table()
+
+        # Vùng chỉnh sửa chi tiết cho dòng đang chọn
+        edit_frame = tk.LabelFrame(self, text="Chỉnh sửa mã đề & chuỗi đáp án đã chọn", bg=COLOR_BG, padx=10, pady=8)
+        edit_frame.pack(fill="x", padx=12, pady=6)
+
+        sub_f = tk.Frame(edit_frame, bg=COLOR_BG)
+        sub_f.pack(fill="x", pady=2)
+        tk.Label(sub_f, text="Mã đề:", bg=COLOR_BG, font=("Segoe UI", 9, "bold")).pack(side="left")
+        self.ent_edit_code = tk.Entry(sub_f, width=10, font=("Segoe UI", 9))
+        self.ent_edit_code.pack(side="left", padx=(6, 16))
+
+        tk.Label(sub_f, text="Chuỗi 50 đáp án:", bg=COLOR_BG, font=("Segoe UI", 9, "bold")).pack(side="left")
+        self.ent_edit_ans = tk.Entry(sub_f, font=("Segoe UI", 9))
+        self.ent_edit_ans.pack(side="left", fill="x", expand=True, padx=6)
+
+        _styled_btn(sub_f, "Cập nhật", self._apply_edit, bg="#1a5a9a").pack(side="right")
+
+        self.tree.bind("<<TreeviewSelect>>", self._on_select_item)
+
+        # Thanh nút bấm dưới cùng
+        bottom_bar = tk.Frame(self, bg=COLOR_BG, padx=12, pady=10)
+        bottom_bar.pack(fill="x")
+
+        _styled_btn(bottom_bar, "💾  LƯU TẤT CẢ VÀO ĐỢT THI", self._save_all, bg="#107C41", font=("Segoe UI", 10, "bold")).pack(side="right", padx=6)
+        _styled_btn(bottom_bar, "Đóng", self.destroy, bg="#666666").pack(side="right", padx=6)
+
+    def _populate_table(self):
+        for i in self.tree.get_children():
+            self.tree.delete(i)
+        for idx, item in enumerate(self.scanned_items):
+            ans = item.get("answers", [])
+            valid_c = sum(1 for a in ans if a in ("A", "B", "C", "D"))
+            warns = "; ".join(item.get("review_reasons", [])) or (item.get("error_message") or "Hợp lệ")
+            preview = "".join(ans[:20]) + ("..." if len(ans) > 20 else "")
+            self.tree.insert("", "end", iid=str(idx), values=(
+                item.get("filename", ""),
+                item.get("exam_code") or "—",
+                item.get("session_code") or "—",
+                f"{valid_c}/50",
+                warns,
+                preview,
+            ))
+
+    def _on_select_item(self, event=None):
+        sel = self.tree.selection()
+        if not sel:
+            return
+        idx = int(sel[0])
+        item = self.scanned_items[idx]
+        self.ent_edit_code.delete(0, "end")
+        self.ent_edit_code.insert(0, item.get("exam_code") or "")
+        self.ent_edit_ans.delete(0, "end")
+        self.ent_edit_ans.insert(0, "".join(item.get("answers", [])))
+
+    def _apply_edit(self):
+        sel = self.tree.selection()
+        if not sel:
+            return
+        idx = int(sel[0])
+        new_code = self.ent_edit_code.get().strip()
+        new_ans_str = self.ent_edit_ans.get().strip().upper().replace(" ", "").replace(",", "")
+        if len(new_ans_str) != 50:
+            messagebox.showwarning("Chú ý", f"Chuỗi đáp án phải đủ 50 câu (hiện có {len(new_ans_str)} ký tự).", parent=self)
+            return
+
+        self.scanned_items[idx]["exam_code"] = new_code
+        self.scanned_items[idx]["answers"] = list(new_ans_str)
+        self.scanned_items[idx]["blank_questions"] = [i + 1 for i, a in enumerate(new_ans_str) if a not in ("A", "B", "C", "D")]
+        self.scanned_items[idx]["review_reasons"] = []
+        self._populate_table()
+        messagebox.showinfo("Đã cập nhật", f"Đã cập nhật thông tin mã đề {new_code}!", parent=self)
+
+    def _save_all(self):
+        saved = 0
+        overwritten = 0
+        for item in self.scanned_items:
+            ecode = item.get("exam_code")
+            ans = item.get("answers", [])
+            if not ecode or len(ans) != 50 or any(a not in ("A", "B", "C", "D") for a in ans):
+                continue
+
+            existing = self.mgr.get_answer_key(self.session_code, ecode)
+            if existing:
+                overwritten += 1
+            self.mgr.set_answer_key(self.session_code, ecode, ans, source="omr_scan")
+            saved += 1
+
+        messagebox.showinfo(
+            "Lưu thành công",
+            f"Đã lưu thành công {saved} bộ đáp án chuẩn vào đợt thi '{self.session_code}'!\n"
+            f"(Ghi đè {overwritten} mã đề đã có trước đó).",
+            parent=self,
+        )
+        if self.on_saved_callback:
+            self.on_saved_callback()
+        self.destroy()
+
+
 class ExamCodeManagerDialog(tk.Toplevel):
     def __init__(self, parent, session_manager: SessionManager, session_code: str):
         super().__init__(parent)
-        self.title(f"Quản lý Mã đề & Bộ đáp án — Đợt thi: {session_code}")
-        self.geometry("740x460")
-        self.minsize(580, 360)
+        self.title("Quản lý Mã đề & Bộ đáp án chuẩn")
+        self.geometry("820x520")
+        self.minsize(680, 400)
         self.configure(bg=COLOR_BG)
         self.grab_set()
 
@@ -363,15 +519,31 @@ class ExamCodeManagerDialog(tk.Toplevel):
         self._load_codes()
 
     def _build_ui(self):
+        # Thanh chọn đợt thi và công cụ
         top_bar = tk.Frame(self, bg=COLOR_BG, padx=10, pady=8)
         top_bar.pack(fill="x")
 
-        _styled_btn(top_bar, "➕  Thêm mã đề", self._add_exam_code, bg="#107C41").pack(side="left", padx=4)
-        _styled_btn(top_bar, "📥  Nhập từ Excel", self._import_excel, bg="#1a5a9a").pack(side="left", padx=4)
-        _styled_btn(top_bar, "📥  Nhập từ CSV", self._import_csv, bg="#7B3F9E").pack(side="left", padx=4)
-        _styled_btn(top_bar, "📷  Đọc từ ảnh phiếu đáp án", self._import_from_sheet_images, bg="#D83B01").pack(side="left", padx=4)
+        tk.Label(top_bar, text="Đợt thi:", bg=COLOR_BG, font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 4))
+        sessions = self.mgr.list_sessions()
+        sess_codes = [s["session_code"] for s in sessions] or [self.session_code]
+        self.cbo_session = ttk.Combobox(top_bar, values=sess_codes, width=8, state="readonly")
+        if self.session_code in sess_codes:
+            self.cbo_session.set(self.session_code)
+        elif sess_codes:
+            self.cbo_session.set(sess_codes[0])
+            self.session_code = sess_codes[0]
+        self.cbo_session.pack(side="left", padx=(0, 10))
+        self.cbo_session.bind("<<ComboboxSelected>>", self._on_session_changed)
 
-        # Bảng
+        _styled_btn(top_bar, "➕  Thêm mã đề", self._add_exam_code, bg="#107C41").pack(side="left", padx=3)
+        _styled_btn(top_bar, "📥  Excel", self._import_excel, bg="#1a5a9a").pack(side="left", padx=3)
+        _styled_btn(top_bar, "📥  CSV", self._import_csv, bg="#7B3F9E").pack(side="left", padx=3)
+        _styled_btn(top_bar, "📥  JSON", self._import_json, bg="#D83B01").pack(side="left", padx=3)
+        _styled_btn(top_bar, "📷  Quét nhiều ảnh", self._import_from_sheet_images, bg="#B83B01").pack(side="left", padx=3)
+        _styled_btn(top_bar, "🗑️  Xóa mã đề", self._delete_selected, bg="#666666").pack(side="left", padx=3)
+        _styled_btn(top_bar, "🎯 Nạp Demo", self._load_demo, bg="#0078D7").pack(side="right", padx=3)
+
+        # Bảng danh sách mã đề
         table_frame = tk.Frame(self, bg=COLOR_BG, padx=10, pady=4)
         table_frame.pack(fill="both", expand=True)
 
@@ -379,12 +551,12 @@ class ExamCodeManagerDialog(tk.Toplevel):
         self.tree = ttk.Treeview(table_frame, columns=cols, show="headings", selectmode="browse")
         self.tree.heading("code", text="Mã đề")
         self.tree.heading("source", text="Nguồn")
-        self.tree.heading("answers_preview", text="Xem trước đáp án (10 câu đầu)")
+        self.tree.heading("answers_preview", text="Xem trước đáp án (15 câu đầu)")
         self.tree.heading("created_at", text="Ngày tạo")
 
-        self.tree.column("code", width=100, anchor="center")
+        self.tree.column("code", width=90, anchor="center")
         self.tree.column("source", width=100, anchor="center")
-        self.tree.column("answers_preview", width=340)
+        self.tree.column("answers_preview", width=380)
         self.tree.column("created_at", width=140, anchor="center")
 
         sb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
@@ -392,45 +564,94 @@ class ExamCodeManagerDialog(tk.Toplevel):
         self.tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
 
+        # Thanh trạng thái dưới cùng
+        self.lbl_status = tk.Label(self, text="", bg=COLOR_BG, font=("Segoe UI", 9, "bold"), anchor="w", padx=12, pady=6)
+        self.lbl_status.pack(fill="x")
+
+    def _on_session_changed(self, event=None):
+        self.session_code = self.cbo_session.get().strip()
+        self._load_codes()
+
     def _load_codes(self):
         for i in self.tree.get_children():
             self.tree.delete(i)
         codes = self.mgr.list_exam_codes(self.session_code)
         for c in codes:
             ans = c.get("answers", [])
-            preview = " ".join(f"{idx+1}:{a}" for idx, a in enumerate(ans[:10])) + ("..." if len(ans) > 10 else "")
-            self.tree.insert("", "end", values=(c["exam_code"], c["source"], preview, c["created_at"][:19]))
+            preview = "".join(f"{idx+1}:{a} " for idx, a in enumerate(ans[:15])) + ("..." if len(ans) > 15 else "")
+            self.tree.insert("", "end", iid=c["exam_code"], values=(c["exam_code"], c["source"], preview, c["created_at"][:19]))
+
+        code_names = sorted([c["exam_code"] for c in codes])
+        std_codes = {"101", "102", "103", "104"}
+        missing = std_codes - set(code_names)
+        status_txt = f"Đợt thi '{self.session_code}': Đã có {len(codes)} mã đề ({', '.join(code_names) or 'Chưa có'})."
+        if not missing:
+            status_txt += " ✓ Đã đủ 4 mã đề chuẩn (101, 102, 103, 104)!"
+            self.lbl_status.configure(text=status_txt, fg="#107C41")
+        elif codes:
+            status_txt += f" ⚠️ Còn thiếu: {', '.join(sorted(missing))}"
+            self.lbl_status.configure(text=status_txt, fg="#C05000")
+        else:
+            status_txt += " ⚠️ Chưa có bộ đáp án chuẩn nào!"
+            self.lbl_status.configure(text=status_txt, fg="#C00000")
 
     def _add_exam_code(self):
-        # Dialog nhập nhanh hoặc gõ chuỗi
         win = tk.Toplevel(self)
-        win.title(f"Thêm mã đề cho đợt {self.session_code}")
-        win.geometry("480x280")
+        win.title(f"Thêm / Chỉnh sửa mã đề — Đợt {self.session_code}")
+        win.geometry("540x360")
+        win.minsize(480, 300)
         win.configure(bg=COLOR_BG)
         win.grab_set()
 
-        tk.Label(win, text="Mã đề thi (vd: 101, 102):", bg=COLOR_BG).pack(anchor="w", padx=16, pady=(10, 2))
+        tk.Label(win, text="Mã đề thi (vd: 101, 102, 103, 104):", bg=COLOR_BG, font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=16, pady=(12, 2))
         ent_code = tk.Entry(win, font=("Segoe UI", 10))
         ent_code.insert(0, "101")
         ent_code.pack(fill="x", padx=16)
 
-        tk.Label(win, text="Chuỗi 50 đáp án (vd: ABCDABCD... không dấu cách):", bg=COLOR_BG).pack(anchor="w", padx=16, pady=(10, 2))
-        txt_ans = tk.Text(win, height=4, font=("Segoe UI", 10))
+        tk.Label(win, text="Chuỗi 50 đáp án (A/B/C/D, không dấu cách):", bg=COLOR_BG, font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=16, pady=(10, 2))
+        txt_ans = tk.Text(win, height=5, font=("Segoe UI", 10))
         txt_ans.pack(fill="x", padx=16)
+        txt_ans.insert("1.0", "ABCD" * 12 + "AB")
+
+        lbl_count = tk.Label(win, text="Độ dài hiện tại: 50/50 câu", bg=COLOR_BG, font=("Segoe UI", 9, "italic"))
+        lbl_count.pack(anchor="w", padx=16, pady=4)
+
+        def on_txt_change(e=None):
+            raw = txt_ans.get("1.0", "end").strip().upper().replace(" ", "").replace(",", "").replace("\n", "")
+            lbl_count.configure(text=f"Độ dài hiện tại: {len(raw)}/50 câu")
+
+        txt_ans.bind("<KeyRelease>", on_txt_change)
 
         def save():
             try:
                 ecode = ent_code.get().strip()
+                if not ecode:
+                    raise OMRError("Mã đề không được để trống.")
                 raw = txt_ans.get("1.0", "end").strip().upper().replace(" ", "").replace(",", "").replace("\n", "")
+                if len(raw) != 50:
+                    raise OMRError(f"Đáp án phải có đúng 50 câu; hiện có {len(raw)} câu.")
                 ans_list = list(raw)
+
+                # Kiểm tra nếu mã đã tồn tại, hỏi trước khi ghi đè
+                existing = self.mgr.get_answer_key(self.session_code, ecode)
+                if existing:
+                    confirm = messagebox.askyesno(
+                        "Xác nhận ghi đè",
+                        f"Mã đề '{ecode}' đã có đáp án chuẩn trong đợt '{self.session_code}'.\n"
+                        f"Bạn có muốn ghi đè bộ đáp án mới không?",
+                        parent=win,
+                    )
+                    if not confirm:
+                        return
+
                 self.mgr.set_answer_key(self.session_code, ecode, ans_list, source="manual")
-                messagebox.showinfo("Thành công", f"Đã lưu bộ đáp án cho mã đề {ecode}!", parent=win)
+                messagebox.showinfo("Thành công", f"Đã lưu thành công bộ đáp án cho mã đề {ecode}!", parent=win)
                 win.destroy()
                 self._load_codes()
             except Exception as e:
                 messagebox.showerror("Lỗi", str(e), parent=win)
 
-        _styled_btn(win, "Lưu đáp án", save, bg="#107C41").pack(pady=12)
+        _styled_btn(win, "💾  Lưu bộ đáp án", save, bg="#107C41", font=("Segoe UI", 10, "bold")).pack(pady=12)
 
     def _import_excel(self):
         f = filedialog.askopenfilename(parent=self, filetypes=[("Excel Files", "*.xlsx")])
@@ -452,22 +673,82 @@ class ExamCodeManagerDialog(tk.Toplevel):
             except Exception as e:
                 messagebox.showerror("Lỗi nhập CSV", str(e), parent=self)
 
+    def _import_json(self):
+        f = filedialog.askopenfilename(parent=self, filetypes=[("JSON Files", "*.json")])
+        if f:
+            try:
+                cnt = self.mgr.import_answer_keys_from_json(f, default_session_code=self.session_code)
+                messagebox.showinfo("Thành công", f"Đã nhập {cnt} bộ đáp án từ file JSON!", parent=self)
+                self._load_codes()
+            except Exception as e:
+                messagebox.showerror("Lỗi nhập JSON", str(e), parent=self)
+
     def _import_from_sheet_images(self):
-        files = filedialog.askopenfilenames(parent=self, filetypes=[("Image Files", "*.png;*.jpg;*.jpeg")])
+        files = filedialog.askopenfilenames(
+            parent=self,
+            title="Chọn các ảnh phiếu đáp án chuẩn",
+            filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp")],
+        )
         if not files:
             return
-        success = 0
-        from modules.batch_processor import process_single_sheet
+
+        # Quét từng ảnh độc lập bằng read_answer_key_from_image (KHÔNG tạo kết quả học sinh)
+        scanned_items = []
         for f in files:
-            try:
-                item = process_single_sheet(f, self.mgr, self.session_code)
-                if item.exam_code and len(item.answers) == 50 and item.status != "FAILED":
-                    self.mgr.set_answer_key(self.session_code, item.exam_code, item.answers, source="omr_scan")
-                    success += 1
-            except Exception:
+            res = read_answer_key_from_image(f)
+            scanned_items.append(res)
+
+        # Mở dialog xem trước, chỉnh sửa và xác nhận
+        ReviewScannedKeysDialog(
+            parent=self,
+            session_manager=self.mgr,
+            session_code=self.session_code,
+            scanned_items=scanned_items,
+            on_saved_callback=self._load_codes,
+        )
+
+    def _delete_selected(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Chú ý", "Vui lòng chọn một mã đề để xóa.", parent=self)
+            return
+        ecode = sel[0]
+        confirm = messagebox.askyesno(
+            "Xác nhận xóa",
+            f"Bạn có chắc muốn xóa mã đề '{ecode}' khỏi đợt thi '{self.session_code}'?",
+            parent=self,
+        )
+        if confirm:
+            with self.mgr._lock if hasattr(self.mgr, "_lock") else open(self.mgr.db_path):
                 pass
-        messagebox.showinfo("Quét ảnh đáp án", f"Đã quét và lưu thành công {success}/{len(files)} bộ đáp án!", parent=self)
-        self._load_codes()
+            from modules.db import transaction
+            with transaction(self.mgr.db_path) as conn:
+                conn.execute(
+                    "DELETE FROM exam_codes WHERE session_code = ? AND exam_code = ?",
+                    (self.session_code, ecode),
+                )
+            self._load_codes()
+            messagebox.showinfo("Đã xóa", f"Đã xóa mã đề {ecode}!", parent=self)
+
+    def _load_demo(self):
+        confirm = messagebox.askyesno(
+            "Nạp dữ liệu Demo",
+            "Bạn có muốn nạp dữ liệu mẫu (2 đợt thi 01-02, 4 lớp học, 43 học sinh và 8 bộ đáp án chuẩn 101-104)?\n\n"
+            "Dữ liệu hiện có của bạn sẽ được bảo toàn nguyên vẹn.",
+            parent=self,
+        )
+        if confirm:
+            stats = load_demo_data(self.mgr)
+            messagebox.showinfo(
+                "Nạp Demo Hoàn tất",
+                f"Đã nạp thành công:\n"
+                f"- Đợt thi mới: {stats['sessions']}\n"
+                f"- Lớp học mới: {stats['classes']}\n"
+                f"- Học sinh: {stats['students']}\n"
+                f"- Bộ đáp án chuẩn: {stats['exam_codes']}",
+                parent=self,
+            )
+            self._load_codes()
 
 
 # ── 4. DIALOG CHẤM BÀI HÀNG LOẠT (BATCH PROCESSING) ──────────────────────────
@@ -500,6 +781,8 @@ class BatchProcessorDialog(tk.Toplevel):
         self.btn_run = _styled_btn(top_bar, "▶️  BẮT ĐẦU CHẤM", self._start_batch, bg="#107C41", font=("Segoe UI", 10, "bold"))
         self.btn_run.pack(side="right", padx=4)
 
+        _styled_btn(top_bar, "🔁  Chấm lại bài lỗi", self._retry_failed, bg="#D83B01").pack(side="right", padx=4)
+        _styled_btn(top_bar, "🎯 Nạp Demo", self._load_demo, bg="#1a5a9a").pack(side="right", padx=4)
         _styled_btn(top_bar, "📊  Xuất Excel 6 sheet", self._export_excel, bg="#0078D7").pack(side="right", padx=4)
 
         # Thanh tiến trình
@@ -600,6 +883,20 @@ class BatchProcessorDialog(tk.Toplevel):
         if self._is_processing:
             return
 
+        # Kiểm tra trước xem đợt thi đã có đáp án chuẩn chưa
+        codes = self.mgr.list_exam_codes(self.session_code)
+        if not codes:
+            proceed = messagebox.askyesno(
+                "Cảnh báo thiếu đáp án chuẩn",
+                f"Đợt thi '{self.session_code}' hiện CHƯA CÓ đáp án chuẩn cho bất kỳ mã đề nào!\n\n"
+                f"Nếu tiếp tục, hệ thống sẽ đọc SBD và đáp án tô trên phiếu nhưng KHÔNG THỂ CHẤM ĐIỂM "
+                f"(các bài thi sẽ ở trạng thái 'Cần kiểm tra' và chưa có điểm chính thức).\n\n"
+                f"Bạn có muốn tiếp tục chấm không?",
+                parent=self,
+            )
+            if not proceed:
+                return
+
         self._is_processing = True
         self.btn_run.configure(state="disabled", text="ĐANG XỬ LÝ...")
         self.progress_bar["maximum"] = len(self.processor.items)
@@ -612,6 +909,36 @@ class BatchProcessorDialog(tk.Toplevel):
             self.after(0, self._on_batch_complete)
 
         self.processor.process_all_async(on_progress=on_prog, on_complete=on_done)
+
+    def _retry_failed(self):
+        if self._is_processing:
+            return
+        count = self.processor.reset_for_retry(include_needs_review=True)
+        if count == 0:
+            messagebox.showinfo("Thông báo", "Không có bài nào bị lỗi hoặc cần kiểm tra.", parent=self)
+            return
+        self._refresh_table()
+        self._start_batch()
+
+    def _load_demo(self):
+        confirm = messagebox.askyesno(
+            "Nạp dữ liệu Demo",
+            "Bạn có muốn nạp dữ liệu mẫu (2 đợt thi 01-02, 4 lớp học, 43 học sinh và 8 bộ đáp án chuẩn)?\n\n"
+            "Dữ liệu của bạn sẽ được bảo toàn nguyên vẹn.",
+            parent=self,
+        )
+        if confirm:
+            stats = load_demo_data(self.mgr)
+            messagebox.showinfo(
+                "Nạp Demo Hoàn tất",
+                f"Đã nạp thành công:\n"
+                f"- Đợt thi: {stats['sessions']}\n"
+                f"- Lớp học: {stats['classes']}\n"
+                f"- Học sinh: {stats['students']}\n"
+                f"- Bộ đáp án chuẩn: {stats['exam_codes']}",
+                parent=self,
+            )
+            self._refresh_table()
 
     def _update_progress_ui(self, current, total, item):
         self.progress_bar["value"] = current
