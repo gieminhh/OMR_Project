@@ -14,27 +14,35 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .db import get_connection, transaction
+from .db import get_connection, init_db, transaction
 from .errors import OMRError
 from .session_manager import SessionManager
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_KEYS_PATH = ROOT / "answer_key" / "answer_keys.json"
 DEFAULT_STUDENTS_CSV = ROOT / "test_images" / "benchmark_dataset" / "students.csv"
+DEMO_DB_PATH = ROOT / "config" / "demo_omr_database.sqlite"
+USER_DB_PATH = ROOT / "config" / "omr_database.sqlite"
 
 
 def load_demo_data(
     session_manager: SessionManager,
     keys_json_path: Path | str | None = None,
     students_csv_path: Path | str | None = None,
+    overwrite_keys: bool = False,
+    allow_user_db: bool = True,
 ) -> dict[str, Any]:
-    """Nạp dữ liệu mẫu vào cơ sở dữ liệu đã chỉ định."""
+    """Nạp dữ liệu mẫu vào cơ sở dữ liệu đã chỉ định.
+    Mặc định không ghi đè đáp án chuẩn đã tồn tại (overwrite_keys=False).
+    """
     stats = {
         "sessions": 0,
         "classes": 0,
         "students": 0,
         "exam_codes": 0,
         "session_classes": 0,
+        "skipped_keys": 0,
+        "conflicts": [],
     }
 
     db_path = session_manager.db_path
@@ -125,7 +133,29 @@ def load_demo_data(
         json_file = ROOT / "test_images" / "benchmark_dataset" / "answer_keys.json"
 
     if json_file.is_file():
-        added_keys = session_manager.import_answer_keys_from_json(json_file)
+        # Kiểm tra trước các key đã tồn tại để tránh ghi đè dữ liệu người dùng
+        try:
+            raw_keys = json.loads(json_file.read_text(encoding="utf-8"))
+            for s_code, e_map in raw_keys.items():
+                if isinstance(e_map, dict):
+                    for e_code in e_map:
+                        if session_manager.get_answer_key(s_code, e_code) is not None:
+                            if not overwrite_keys:
+                                stats["skipped_keys"] += 1
+                                stats["conflicts"].append(f"Mã đề {e_code} (Đợt {s_code}) đã có đáp án chuẩn, bỏ qua.")
+        except Exception:
+            pass
+
+        added_keys = session_manager.import_answer_keys_from_json(json_file, overwrite_existing=overwrite_keys)
         stats["exam_codes"] += added_keys
 
     return stats
+
+
+def setup_demo_environment(keys_json_path: Path | str | None = None, students_csv_path: Path | str | None = None) -> SessionManager:
+    """Khởi tạo môi trường Demo hoàn chỉnh trong database độc lập config/demo_omr_database.sqlite."""
+    DEMO_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    init_db(DEMO_DB_PATH)
+    sm = SessionManager(DEMO_DB_PATH)
+    load_demo_data(sm, keys_json_path=keys_json_path, students_csv_path=students_csv_path, overwrite_keys=True)
+    return sm

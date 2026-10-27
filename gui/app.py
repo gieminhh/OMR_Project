@@ -1248,13 +1248,11 @@ class OMRApp(tk.Tk):
             except Exception:
                 ids = None
 
-        # Tự động lấy đáp án chuẩn từ đợt thi theo mã đề nếu chưa nạp key lẻ
+        # Tự động lấy đáp án chuẩn theo đúng đợt thi và mã đề (không lấy chéo đợt thi khác)
         if not key_to_use and ids and ids.exam_code:
             target_sess = ids.session_code if (ids.template_version == "V2" and ids.session_code) else self.current_session_code
             if target_sess:
                 key_to_use = self.session_manager.get_answer_key(target_sess, ids.exam_code)
-                if not key_to_use and target_sess != self.current_session_code:
-                    key_to_use = self.session_manager.get_answer_key(self.current_session_code, ids.exam_code)
 
         if key_to_use:
             try:
@@ -1284,20 +1282,27 @@ class OMRApp(tk.Tk):
                 "#107C41",
             )
 
-        # Lưu tự động vào cơ sở dữ liệu đợt thi hiện tại
+        # Lưu tự động vào cơ sở dữ liệu đợt thi tương ứng
         try:
             if self._image_path and ids is not None:
                 target_session = self.current_session_code
+                extra_reasons = []
                 if ids.template_version == "V2":
                     if ids.session_code is None:
                         raise OMRError("Không đọc được mã đợt thi trên phiếu; bài chưa được lưu vào đợt thi.")
                     target_session = ids.session_code
+                    if self.current_session_code and str(ids.session_code).strip() != str(self.current_session_code).strip():
+                        extra_reasons.append(
+                            f"Mã đợt thi trên phiếu ('{ids.session_code}') khác với đợt thi đang chọn ('{self.current_session_code}')."
+                        )
+
                 self.session_manager.save_exam_result(
                     session_code=target_session,
                     image_path=str(self._image_path),
                     student_answers=answers,
                     sbd=ids.sbd,
                     exam_code=ids.exam_code,
+                    extra_review_reasons=extra_reasons if extra_reasons else None,
                 )
         except Exception as exc:
             self._set_status(f"⚠ Chưa lưu vào đợt thi: {exc}", "#C05000")

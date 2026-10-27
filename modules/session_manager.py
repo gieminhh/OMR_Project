@@ -10,6 +10,7 @@
 
 import csv
 from datetime import datetime
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -46,6 +47,21 @@ def classify_score(score: float, scale_config: dict[str, float] | None = None) -
     return "Kém"
 
 
+def compute_file_hash(path: str | Path) -> str | None:
+    """Tính mã băm SHA-256 của file để nhận diện chính xác nội dung ảnh."""
+    p = Path(path)
+    if not p.is_file():
+        return None
+    try:
+        h = hashlib.sha256()
+        with open(p, "rb") as f:
+            while chunk := f.read(65536):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        return None
+
+
 class SessionManager:
     """Lớp quản lý nghiệp vụ đợt thi, học sinh, mã đề và kết quả."""
 
@@ -74,6 +90,11 @@ class SessionManager:
         name = str(name).strip()
         if not name:
             raise OMRError("Tên đợt thi không được để trống.")
+        if question_count != 50:
+            raise OMRError(f"Mẫu phiếu thi hiện tại chỉ hỗ trợ đúng 50 câu (nhận được: {question_count}).")
+        if max_score != 10.0:
+            raise OMRError(f"Hệ thống hiện tại chỉ hỗ trợ thang điểm 10.0 (nhận được: {max_score}).")
+
         now = datetime.now().isoformat()
         scale_json = json.dumps(grade_scale_config or DEFAULT_GRADE_SCALE)
 
@@ -113,6 +134,15 @@ class SessionManager:
         session = self.get_session(session_code)
         if session is None:
             raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
+
+        if "question_count" in kwargs and kwargs["question_count"] != 50:
+            raise OMRError(f"Mẫu phiếu thi chỉ hỗ trợ 50 câu (nhận được: {kwargs['question_count']}).")
+        if "max_score" in kwargs and kwargs["max_score"] != 10.0:
+            raise OMRError(f"Hệ thống chỉ hỗ trợ thang điểm 10.0 (nhận được: {kwargs['max_score']}).")
+
+        if session["status"] in ("LOCKED", "CLOSED") and kwargs.get("status") not in ("ACTIVE", None):
+            raise OMRError(f"Đợt thi '{session_code}' đang ở trạng thái {session['status']}. Cần mở khóa trước khi chỉnh sửa thông tin.")
+
         allowed = {"name", "subject", "exam_date", "question_count", "max_score", "status", "grade_scale_config"}
         updates = []
         params = []
@@ -147,6 +177,79 @@ class SessionManager:
         if session is None:
             raise OMRError(f"Không thể tải đợt thi vừa cập nhật '{session_code}'.")
         return session
+
+    def lock_session(self, session_code: str, reason: str = "", operator: str = "admin") -> dict:
+        """Khóa đợt thi để không nhận bài mới và không cho phép sửa kết quả."""
+        session_code = str(session_code).strip()
+        sess = self.get_session(session_code)
+        if not sess:
+            raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
+        now = datetime.now().isoformat()
+        with transaction(self.db_path) as conn:
+            conn.execute(
+                "UPDATE exam_sessions SET status = 'LOCKED', updated_at = ? WHERE session_code = ?",
+                (now, session_code),
+            )
+            conn.execute(
+                """
+                INSERT INTO session_audit_logs (session_code, action, reason, operator, details_json, created_at)
+                VALUES (?, 'LOCK', ?, ?, ?, ?)
+                """,
+                (session_code, reason or "Khóa đợt thi", operator, json.dumps({"previous_status": sess["status"]}), now),
+            )
+        return self.get_session(session_code)
+
+    def unlock_session(self, session_code: str, reason: str = "", operator: str = "admin") -> dict:
+        """Mở khóa đợt thi (ghi nhận lý do và audit log)."""
+        session_code = str(session_code).strip()
+        sess = self.get_session(session_code)
+        if not sess:
+            raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
+        now = datetime.now().isoformat()
+        with transaction(self.db_path) as conn:
+            conn.execute(
+                "UPDATE exam_sessions SET status = 'ACTIVE', updated_at = ? WHERE session_code = ?",
+                (now, session_code),
+            )
+            conn.execute(
+                """
+                INSERT INTO session_audit_logs (session_code, action, reason, operator, details_json, created_at)
+                VALUES (?, 'UNLOCK', ?, ?, ?, ?)
+                """,
+                (session_code, reason or "Mở khóa đợt thi", operator, json.dumps({"previous_status": sess["status"]}), now),
+            )
+        return self.get_session(session_code)
+
+    def close_session(self, session_code: str, reason: str = "", operator: str = "admin") -> dict:
+        """Đóng đợt thi chính thức."""
+        session_code = str(session_code).strip()
+        sess = self.get_session(session_code)
+        if not sess:
+            raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
+        now = datetime.now().isoformat()
+        with transaction(self.db_path) as conn:
+            conn.execute(
+                "UPDATE exam_sessions SET status = 'CLOSED', updated_at = ? WHERE session_code = ?",
+                (now, session_code),
+            )
+            conn.execute(
+                """
+                INSERT INTO session_audit_logs (session_code, action, reason, operator, details_json, created_at)
+                VALUES (?, 'CLOSE', ?, ?, ?, ?)
+                """,
+                (session_code, reason or "Đóng đợt thi", operator, json.dumps({"previous_status": sess["status"]}), now),
+            )
+        return self.get_session(session_code)
+
+    def get_session_audit_logs(self, session_code: str) -> list[dict]:
+        """Lấy lịch sử thao tác khóa/mở khóa đợt thi."""
+        session_code = str(session_code).strip()
+        conn = get_connection(self.db_path)
+        cur = conn.execute(
+            "SELECT * FROM session_audit_logs WHERE session_code = ? ORDER BY id ASC",
+            (session_code,),
+        )
+        return [dict(r) for r in cur.fetchall()]
 
     def get_session(self, session_code: str) -> dict | None:
         """Lấy thông tin đợt thi theo mã (hỗ trợ chuẩn hóa số 0 ở đầu)."""
@@ -249,7 +352,11 @@ class SessionManager:
         return {"student_code": student_code, "sbd": sbd, "full_name": full_name, "class_code": class_code}
 
     def get_student_by_sbd(self, sbd: str, session_code: str | None = None) -> dict | None:
-        """Tìm học sinh theo số báo danh (ưu tiên trong các lớp thuộc đợt thi nếu có, giữ và chuẩn hóa số 0)."""
+        """Tìm học sinh theo số báo danh.
+        Nếu có session_code: CHỈ tìm trong các lớp thuộc đợt thi (session_classes).
+        KHÔNG fallback sang các lớp ngoài đợt thi.
+        Nếu phát hiện nhiều học sinh trùng SBD trong đợt thi, đánh dấu is_ambiguous = True.
+        """
         sbd = str(sbd).strip()
         conn = get_connection(self.db_path)
         candidates = [sbd]
@@ -261,27 +368,41 @@ class SessionManager:
             if ns and ns not in candidates:
                 candidates.append(ns)
 
+        placeholders = ",".join("?" for _ in candidates)
+
         if session_code:
-            for cand in candidates:
+            cur_count = conn.execute("SELECT COUNT(*) as c FROM session_classes WHERE session_code = ?", (session_code,))
+            has_class_restrictions = (cur_count.fetchone()["c"] > 0)
+            if has_class_restrictions:
                 cur = conn.execute(
-                    """
+                    f"""
                     SELECT s.* FROM students s
                     INNER JOIN session_classes sc ON s.class_code = sc.class_code
-                    WHERE s.sbd = ? AND sc.session_code = ?
+                    WHERE s.sbd IN ({placeholders}) AND sc.session_code = ?
                     """,
-                    (cand, session_code),
+                    (*candidates, session_code),
                 )
-                row = cur.fetchone()
-                if row:
-                    return dict(row)
+                rows = [dict(r) for r in cur.fetchall()]
+                if not rows:
+                    return None
+                distinct_codes = {r["student_code"] for r in rows}
+                res = dict(rows[0])
+                if len(distinct_codes) > 1:
+                    res["is_ambiguous"] = True
+                return res
 
-        for cand in candidates:
-            cur = conn.execute("SELECT * FROM students WHERE sbd = ?", (cand,))
-            row = cur.fetchone()
-            if row:
-                return dict(row)
-
-        return None
+        cur = conn.execute(
+            f"SELECT * FROM students WHERE sbd IN ({placeholders})",
+            candidates,
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        if not rows:
+            return None
+        distinct_codes = {r["student_code"] for r in rows}
+        res = dict(rows[0])
+        if len(distinct_codes) > 1:
+            res["is_ambiguous"] = True
+        return res
 
     def list_students(self, class_code: str | None = None, search: str | None = None) -> list[dict]:
         """Liệt kê danh sách học sinh theo lớp hoặc tìm kiếm."""
@@ -382,7 +503,8 @@ class SessionManager:
         exam_code: str,
         answers: list[str],
         source: str = "manual",
-    ) -> dict:
+        overwrite: bool = True,
+    ) -> dict | None:
         """Lưu hoặc cập nhật bộ đáp án cho mã đề trong đợt thi."""
         session_code = str(session_code).strip()
         exam_code = str(exam_code).strip()
@@ -393,7 +515,13 @@ class SessionManager:
         sess = self.get_session(session_code)
         if not sess:
             raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
+        if sess.get("status") in ("LOCKED", "CLOSED"):
+            raise OMRError(f"Đợt thi '{session_code}' đang ở trạng thái {sess.get('status')}. Không thể thay đổi đáp án chuẩn.")
         expected_len = sess["question_count"]
+
+        # Nếu không cho phép ghi đè và đã có đáp án, bỏ qua
+        if not overwrite and self.get_answer_key(session_code, exam_code) is not None:
+            return None
 
         if len(answers) != expected_len:
             raise ScoringError(f"Đáp án mã đề {exam_code} cần đúng {expected_len} câu, nhận được {len(answers)}.")
@@ -448,6 +576,22 @@ class SessionManager:
             d["answers"] = json.loads(d.pop("answers_json"))
             result.append(d)
         return result
+
+    def delete_exam_code(self, session_code: str, exam_code: str) -> bool:
+        """Xóa một mã đề khỏi đợt thi qua transaction an toàn."""
+        session_code = str(session_code).strip()
+        exam_code = str(exam_code).strip()
+        sess = self.get_session(session_code)
+        if not sess:
+            raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
+        if sess.get("status") in ("LOCKED", "CLOSED"):
+            raise OMRError(f"Đợt thi '{session_code}' đang ở trạng thái {sess.get('status')}. Không thể xóa mã đề.")
+        with transaction(self.db_path) as conn:
+            cur = conn.execute(
+                "DELETE FROM exam_codes WHERE session_code = ? AND exam_code = ?",
+                (session_code, exam_code),
+            )
+            return cur.rowcount > 0
 
     def import_answer_keys_from_csv(self, session_code: str | None, file_path: str | Path) -> int:
         """Nhập nhiều mã đề và đáp án từ file CSV.
@@ -579,7 +723,12 @@ class SessionManager:
 
         return count
 
-    def import_answer_keys_from_json(self, file_path: str | Path, default_session_code: str | None = None) -> int:
+    def import_answer_keys_from_json(
+        self,
+        file_path: str | Path,
+        default_session_code: str | None = None,
+        overwrite_existing: bool = True,
+    ) -> int:
         """Nhập bộ đáp án từ file JSON (hỗ trợ JSON tổng hợp đa đợt thi hoặc đơn lẻ)."""
         path = Path(file_path)
         if not path.is_file():
@@ -603,8 +752,9 @@ class SessionManager:
                     if isinstance(exams, dict):
                         for e_code, ans_list in exams.items():
                             if isinstance(ans_list, list) and len(ans_list) == sess["question_count"]:
-                                self.set_answer_key(s_code, str(e_code).strip(), ans_list, source="json")
-                                count += 1
+                                res = self.set_answer_key(s_code, str(e_code).strip(), ans_list, source="json", overwrite=overwrite_existing)
+                                if res is not None:
+                                    count += 1
                 return count
 
             # Dạng 2: {"101": ["A", ...], "102": [...]} với default_session_code
@@ -617,8 +767,9 @@ class SessionManager:
                     raise OMRError(f"Đợt thi '{s_code}' không tồn tại.")
                 for e_code, ans_list in data.items():
                     if isinstance(ans_list, list) and len(ans_list) == sess["question_count"]:
-                        self.set_answer_key(s_code, str(e_code).strip(), ans_list, source="json")
-                        count += 1
+                        res = self.set_answer_key(s_code, str(e_code).strip(), ans_list, source="json", overwrite=overwrite_existing)
+                        if res is not None:
+                            count += 1
                 return count
 
             # Dạng 3: {"session_code": "01", "exam_code": "101", "answers": [...]}
@@ -627,8 +778,8 @@ class SessionManager:
                 e_code = str(data.get("exam_code") or "").strip()
                 ans_list = data["answers"]
                 if s_code and e_code and isinstance(ans_list, list):
-                    self.set_answer_key(s_code, e_code, ans_list, source="json")
-                    return 1
+                    res = self.set_answer_key(s_code, e_code, ans_list, source="json", overwrite=overwrite_existing)
+                    return 1 if res is not None else 0
 
         # Dạng 4: List of dicts [{"session_code": "01", "exam_code": "101", "answers": [...]}, ...]
         elif isinstance(data, list):
@@ -640,8 +791,9 @@ class SessionManager:
                     if s_code and e_code and isinstance(ans_list, list):
                         sess = self.get_session(s_code)
                         if sess and len(ans_list) == sess["question_count"]:
-                            self.set_answer_key(s_code, e_code, ans_list, source="json")
-                            count += 1
+                            res = self.set_answer_key(s_code, e_code, ans_list, source="json", overwrite=overwrite_existing)
+                            if res is not None:
+                                count += 1
 
         return count
 
@@ -694,6 +846,7 @@ class SessionManager:
         student_code: str | None = None,
         student_name: str | None = None,
         class_code: str | None = None,
+        extra_review_reasons: list[str] | None = None,
     ) -> dict:
         """Lưu kết quả bài thi. Tự động kiểm tra trùng lặp và chấm điểm."""
         session_code = str(session_code).strip()
@@ -701,23 +854,39 @@ class SessionManager:
         if not sess:
             raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
 
+        if sess.get("status") in ("LOCKED", "CLOSED"):
+            raise OMRError(f"Đợt thi '{session_code}' đang ở trạng thái {sess.get('status')}. Không thể nhận bài mới hoặc chỉnh sửa kết quả.")
+
         sbd = str(sbd).strip() if sbd else None
         exam_code = str(exam_code).strip() if exam_code else None
         canonical_path = Path(image_path).resolve().as_posix()
-        fname = Path(image_path).name
+        file_hash = compute_file_hash(image_path)
         now = datetime.now().isoformat()
 
         # Đối chiếu học sinh nếu chưa có thông tin
+        is_ambiguous = False
         if sbd and (not student_name or not class_code):
             stu = self.get_student_by_sbd(sbd, session_code)
             if stu:
                 student_code = student_code or stu["student_code"]
                 student_name = student_name or stu["full_name"]
                 class_code = class_code or stu["class_code"]
+                if stu.get("is_ambiguous"):
+                    is_ambiguous = True
 
         # Kiểm tra trạng thái và các điều kiện
         review_reasons = []
         status = "SUCCESS"
+
+        if extra_review_reasons:
+            for err in extra_review_reasons:
+                if err and err not in review_reasons:
+                    review_reasons.append(err)
+            status = "NEEDS_REVIEW"
+
+        if is_ambiguous:
+            status = "NEEDS_REVIEW"
+            review_reasons.append(f"Phát hiện nhiều học sinh có cùng SBD '{sbd}' trong đợt thi.")
 
         if not exam_code:
             status = "NEEDS_REVIEW"
@@ -730,32 +899,40 @@ class SessionManager:
             status = "NEEDS_REVIEW"
             review_reasons.append(f"Không tìm thấy học sinh với SBD '{sbd}' trong danh sách.")
 
-        # Kiểm tra bài đã tồn tại trong đợt thi (hỗ trợ cả đường dẫn tương đối, tuyệt đối và dấu gạch chéo)
+        # Kiểm tra bài đã tồn tại trong đợt thi:
+        # CHỈ khớp khi cùng canonical_path hoặc cùng image_hash.
+        # KHÔNG sử dụng image_path LIKE %fname để tránh 2 ảnh khác thư mục trùng tên bị ghi đè.
         conn = get_connection(self.db_path)
-        cur = conn.execute(
-            """
-            SELECT id, image_path FROM exam_results
-            WHERE session_code = ? AND (
-                image_path = ? OR
-                image_path = ? OR
-                image_path LIKE ?
+        if file_hash:
+            cur = conn.execute(
+                """
+                SELECT id, image_path FROM exam_results
+                WHERE session_code = ? AND (image_path = ? OR image_hash = ?)
+                ORDER BY id DESC LIMIT 1
+                """,
+                (session_code, canonical_path, file_hash),
             )
-            ORDER BY id DESC LIMIT 1
-            """,
-            (session_code, canonical_path, str(image_path), f"%{fname}"),
-        )
+        else:
+            cur = conn.execute(
+                """
+                SELECT id, image_path FROM exam_results
+                WHERE session_code = ? AND image_path = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (session_code, canonical_path),
+            )
         existing_row = cur.fetchone()
         existing_id = existing_row["id"] if existing_row else None
 
-        # Kiểm tra trùng SBD trong đợt thi (loại trừ chính bài đang chấm lại)
+        # Kiểm tra trùng SBD trong đợt thi (loại trừ chính bài đang cập nhật lại cùng ảnh/hash)
         if sbd:
             cur = conn.execute(
                 """
                 SELECT id, image_path FROM exam_results
                 WHERE session_code = ? AND sbd = ? AND status != 'FAILED'
-                AND id != ? AND image_path != ? AND image_path != ? AND image_path NOT LIKE ?
+                AND id != ?
                 """,
-                (session_code, sbd, existing_id or -1, canonical_path, str(image_path), f"%{fname}"),
+                (session_code, sbd, existing_id or -1),
             )
             existing = cur.fetchall()
             if existing:
@@ -781,14 +958,16 @@ class SessionManager:
                 conn.execute(
                     """
                     UPDATE exam_results SET
-                        student_code = ?, sbd = ?, student_name = ?, class_code = ?,
-                        exam_code = ?, student_answers_json = ?, score = ?, correct_count = ?,
-                        wrong_count = ?, blank_count = ?, multiple_count = ?, total_questions = ?,
-                        details_json = ?, classification = ?, status = ?, review_reason = ?,
-                        updated_at = ?
+                        image_path = ?, image_hash = ?, student_code = ?, sbd = ?,
+                        student_name = ?, class_code = ?, exam_code = ?, student_answers_json = ?,
+                        score = ?, correct_count = ?, wrong_count = ?, blank_count = ?,
+                        multiple_count = ?, total_questions = ?, details_json = ?,
+                        classification = ?, status = ?, review_reason = ?, updated_at = ?
                     WHERE id = ?
                     """,
                     (
+                        canonical_path,
+                        file_hash,
                         student_code,
                         sbd,
                         student_name,
@@ -814,15 +993,16 @@ class SessionManager:
                 cur = conn.execute(
                     """
                     INSERT INTO exam_results (
-                        session_code, image_path, student_code, sbd, student_name, class_code,
+                        session_code, image_path, image_hash, student_code, sbd, student_name, class_code,
                         exam_code, student_answers_json, score, correct_count, wrong_count,
                         blank_count, multiple_count, total_questions, details_json,
                         classification, status, review_reason, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         session_code,
                         canonical_path,
+                        file_hash,
                         student_code,
                         sbd,
                         student_name,
@@ -906,42 +1086,77 @@ class SessionManager:
         if not sess:
             raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
 
+        if sess.get("status") in ("LOCKED", "CLOSED"):
+            raise OMRError(f"Đợt thi '{session_code}' đang ở trạng thái {sess.get('status')}. Không thể chấm lại kết quả.")
+
         results = self.list_results(session_code)
         now = datetime.now().isoformat()
         updated_count = 0
 
+        # Đếm số lượng SBD để kiểm tra bài trùng SBD trong đợt
+        sbd_counts: dict[str, int] = {}
+        for r in results:
+            sbd_val = r.get("sbd")
+            if sbd_val and r.get("status") != "FAILED":
+                sbd_counts[sbd_val] = sbd_counts.get(sbd_val, 0) + 1
+
         with transaction(self.db_path) as conn:
             for item in results:
-                # Nếu không có mã đề thì không thể chấm lại
                 ecode = item.get("exam_code")
                 if not ecode:
                     continue
                 key = self.get_answer_key(session_code, ecode)
-                if not key:
-                    # Chuyển trạng thái sang NEEDS_REVIEW
-                    conn.execute(
-                        """
-                        UPDATE exam_results
-                        SET status = 'NEEDS_REVIEW', review_reason = 'Không tìm thấy đáp án chuẩn mã đề', updated_at = ?
-                        WHERE id = ?
-                        """,
-                        (now, item["id"]),
-                    )
-                    continue
 
-                student_answers = item["student_answers"]
-                score_res = score_answers(student_answers, key)
-                classification = classify_score(score_res["score"], sess.get("grade_scale_config"))
+                # Bảo toàn các lý do review trước đó (bỏ qua thông báo thiếu đáp án chuẩn hoặc trùng SBD cũ để tính lại)
+                existing_reasons = []
+                if item.get("review_reason"):
+                    for part in item["review_reason"].split(";"):
+                        p = part.strip()
+                        if (
+                            p
+                            and not p.startswith("Chưa có đáp án chuẩn")
+                            and not p.startswith("Không tìm thấy đáp án chuẩn")
+                            and not p.startswith("Trùng số báo danh")
+                        ):
+                            existing_reasons.append(p)
 
-                # Kiểm tra xem có lý do review khác không
-                review_reasons = []
+                review_reasons = list(existing_reasons)
                 new_status = "SUCCESS"
-                if not item.get("sbd"):
+
+                sbd_val = item.get("sbd")
+                if not sbd_val:
                     new_status = "NEEDS_REVIEW"
                     review_reasons.append("Thiếu số báo danh.")
                 elif not item.get("student_name"):
                     new_status = "NEEDS_REVIEW"
-                    review_reasons.append("Không tìm thấy học sinh trong danh sách.")
+                    review_reasons.append(f"Không tìm thấy học sinh với SBD '{sbd_val}' trong danh sách.")
+                elif sbd_counts.get(sbd_val, 0) > 1:
+                    new_status = "NEEDS_REVIEW"
+                    review_reasons.append(f"Trùng số báo danh '{sbd_val}' trong đợt thi (đã có {sbd_counts[sbd_val] - 1} bài khác).")
+
+                if not key:
+                    new_status = "NEEDS_REVIEW"
+                    review_reasons.append(f"Chưa có đáp án chuẩn cho mã đề '{ecode}'.")
+                    score_val = None
+                    correct_val = None
+                    wrong_val = None
+                    blank_val = None
+                    mult_val = None
+                    details_val = None
+                    classification = None
+                else:
+                    student_answers = item["student_answers"]
+                    score_res = score_answers(student_answers, key)
+                    classification = classify_score(score_res["score"], sess.get("grade_scale_config"))
+                    score_val = score_res["score"]
+                    correct_val = score_res["correct_count"]
+                    wrong_val = score_res["wrong_count"]
+                    blank_val = score_res["blank_count"]
+                    mult_val = score_res["multiple_count"]
+                    details_val = json.dumps(score_res["details"])
+
+                if review_reasons:
+                    new_status = "NEEDS_REVIEW"
 
                 conn.execute(
                     """
@@ -952,12 +1167,12 @@ class SessionManager:
                     WHERE id = ?
                     """,
                     (
-                        score_res["score"],
-                        score_res["correct_count"],
-                        score_res["wrong_count"],
-                        score_res["blank_count"],
-                        score_res["multiple_count"],
-                        json.dumps(score_res["details"]),
+                        score_val,
+                        correct_val,
+                        wrong_val,
+                        blank_val,
+                        mult_val,
+                        details_val,
                         classification,
                         new_status,
                         "; ".join(review_reasons) if review_reasons else None,

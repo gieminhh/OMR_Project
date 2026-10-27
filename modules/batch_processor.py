@@ -127,13 +127,30 @@ def process_single_sheet(
         item.exam_code = identifiers.exam_code
 
         # Nếu Template V2 có đợt thi, ưu tiên đợt thi đọc được từ phiếu
+        session_mismatch = False
         if identifiers.template_version == "V2":
             item.session_code = identifiers.session_code
+            if identifiers.session_code is not None and default_session_code is not None:
+                id_s = str(identifiers.session_code).strip()
+                def_s = str(default_session_code).strip()
+                # Khác đợt thi nếu mã không bằng nhau và không cùng biểu diễn số (vd: 01 vs 001 là cùng đợt, 01 vs 02 là khác đợt)
+                is_different = False
+                if id_s.isdigit() and def_s.isdigit():
+                    is_different = (int(id_s) != int(def_s))
+                else:
+                    is_different = (id_s != def_s)
+
+                if is_different:
+                    session_mismatch = True
+                    mismatch_reason = f"Mã đợt thi trên phiếu ('{identifiers.session_code}') khác với đợt thi đang chọn ('{default_session_code}')."
+                    if mismatch_reason not in item.review_reasons:
+                        item.review_reasons.append(mismatch_reason)
         else:
             item.session_code = default_session_code
 
         for r in identifiers.review_reasons:
-            item.review_reasons.append(r)
+            if r not in item.review_reasons:
+                item.review_reasons.append(r)
 
         # 5. Nhận diện 50 câu trả lời
         ans_detection = analyze_answers(warped, layout_cfg, question_count=50)
@@ -152,12 +169,14 @@ def process_single_sheet(
             item.review_reasons.append("Chưa lưu bài: cần xác định mã đợt thi trên phiếu.")
             return item
 
+        extra_reasons = list(item.review_reasons)
         db_res = session_manager.save_exam_result(
             session_code=item.session_code,
             image_path=str(path),
             student_answers=item.answers,
             sbd=item.sbd,
             exam_code=item.exam_code,
+            extra_review_reasons=extra_reasons if extra_reasons else None,
         )
 
         item.result_id = db_res["id"]

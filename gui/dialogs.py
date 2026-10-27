@@ -719,16 +719,12 @@ class ExamCodeManagerDialog(tk.Toplevel):
             parent=self,
         )
         if confirm:
-            with self.mgr._lock if hasattr(self.mgr, "_lock") else open(self.mgr.db_path):
-                pass
-            from modules.db import transaction
-            with transaction(self.mgr.db_path) as conn:
-                conn.execute(
-                    "DELETE FROM exam_codes WHERE session_code = ? AND exam_code = ?",
-                    (self.session_code, ecode),
-                )
-            self._load_codes()
-            messagebox.showinfo("Đã xóa", f"Đã xóa mã đề {ecode}!", parent=self)
+            try:
+                self.mgr.delete_exam_code(self.session_code, ecode)
+                self._load_codes()
+                messagebox.showinfo("Đã xóa", f"Đã xóa mã đề {ecode}!", parent=self)
+            except Exception as e:
+                messagebox.showerror("Lỗi", str(e), parent=self)
 
     def _load_demo(self):
         confirm = messagebox.askyesno(

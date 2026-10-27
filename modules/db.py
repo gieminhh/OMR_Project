@@ -121,6 +121,7 @@ def init_db(db_path: Path | str | None = None) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_code TEXT NOT NULL REFERENCES exam_sessions(session_code) ON DELETE CASCADE,
             image_path TEXT NOT NULL,
+            image_hash TEXT,
             student_code TEXT,
             sbd TEXT,
             student_name TEXT,
@@ -141,7 +142,29 @@ def init_db(db_path: Path | str | None = None) -> None:
             updated_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS session_audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_code TEXT NOT NULL REFERENCES exam_sessions(session_code) ON DELETE CASCADE,
+            action TEXT NOT NULL,
+            reason TEXT,
+            operator TEXT DEFAULT 'admin',
+            details_json TEXT,
+            created_at TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_exam_results_session ON exam_results(session_code);
         CREATE INDEX IF NOT EXISTS idx_exam_results_sbd ON exam_results(session_code, sbd);
         CREATE INDEX IF NOT EXISTS idx_exam_results_status ON exam_results(status);
+        CREATE INDEX IF NOT EXISTS idx_session_audit_session ON session_audit_logs(session_code);
         """)
+
+        # Tự động cập nhật cột image_hash nếu database cũ chưa có
+        try:
+            conn.execute("ALTER TABLE exam_results ADD COLUMN image_hash TEXT;")
+        except Exception:
+            pass
+
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_exam_results_hash ON exam_results(session_code, image_hash);")
+        except Exception:
+            pass
