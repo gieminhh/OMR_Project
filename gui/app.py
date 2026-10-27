@@ -963,13 +963,16 @@ class OMRApp(tk.Tk):
             self._lbl_info.configure(text="Chưa chọn ảnh")
 
         # Badge đáp án chuẩn
+        self.current_session_code = self.session_manager.resolve_session_code(self.current_session_code)
         session_codes = self.session_manager.list_exam_codes(self.current_session_code)
-        if has_key or session_codes:
-            txt = f"✓ Có đáp án ({len(session_codes)} mã đề)" if session_codes else "✓ Có đáp án chuẩn"
-            self._lbl_key_badge.configure(text=txt, bg="#107C41")
+        if session_codes:
+            code_str = ", ".join(sorted([str(c["exam_code"]) for c in session_codes]))
+            self._lbl_key_badge.configure(text=f"✓ Đáp án đợt {self.current_session_code} ({code_str})", bg="#107C41")
+        elif has_key:
+            self._lbl_key_badge.configure(text="⚠️ Dùng đáp án tạm", bg="#C05000")
         else:
             self._lbl_key_badge.configure(
-                text="Chưa có đáp án chuẩn", bg="#C05000")
+                text=f"Đợt {self.current_session_code}: Chưa có đáp án", bg="#C00000")
 
     def _set_status(self, msg: str, color: str = "#1a3a5c"):
         self._lbl_status.configure(text=msg, fg=color)
@@ -1238,8 +1241,6 @@ class OMRApp(tk.Tk):
             return
 
         score_result = None
-        key_to_use = self._answer_key
-
         warped = result.get("processed_image")
         ids = None
         if warped is not None:
@@ -1248,11 +1249,21 @@ class OMRApp(tk.Tk):
             except Exception:
                 ids = None
 
-        # Tự động lấy đáp án chuẩn theo đúng đợt thi và mã đề (không lấy chéo đợt thi khác)
-        if not key_to_use and ids and ids.exam_code:
+        # Tách biệt chấm chính thức vs chế độ thử nghiệm:
+        # Ưu tiên số 1: Luôn lấy đáp án chuẩn chính thức theo đúng đợt thi và mã đề đã nhận diện
+        key_to_use = None
+        is_temporary_key = False
+        target_sess = self.current_session_code
+        if ids and ids.exam_code:
             target_sess = ids.session_code if (ids.template_version == "V2" and ids.session_code) else self.current_session_code
             if target_sess:
+                target_sess = self.session_manager.resolve_session_code(target_sess)
                 key_to_use = self.session_manager.get_answer_key(target_sess, ids.exam_code)
+
+        # Chế độ thử nghiệm: Chỉ dùng đáp án tạm thời nếu không có đáp án chính thức
+        if not key_to_use and self._answer_key:
+            key_to_use = self._answer_key
+            is_temporary_key = True
 
         if key_to_use:
             try:
@@ -1270,17 +1281,31 @@ class OMRApp(tk.Tk):
 
         if score_result:
             self._btn_excel.configure(state="normal")
-            self._set_status(
-                f"✅ Hoàn thành — Điểm: {score_result['score']}/10  "
-                f"(Đúng {score_result['correct_count']}/50)",
-                "#107C41",
-            )
+            if is_temporary_key:
+                self._set_status(
+                    f"⚠️ Chấm thử nghiệm (đáp án tạm) — Điểm: {score_result['score']}/10  "
+                    f"(Đúng {score_result['correct_count']}/50)",
+                    "#C05000",
+                )
+            else:
+                code_lbl = f"Mã đề {ids.exam_code} • " if (ids and ids.exam_code) else ""
+                self._set_status(
+                    f"✅ Hoàn thành ({code_lbl}Đợt {target_sess}) — Điểm: {score_result['score']}/10  "
+                    f"(Đúng {score_result['correct_count']}/50)",
+                    "#107C41",
+                )
         else:
             self._btn_excel.configure(state="disabled")
-            self._set_status(
-                "✅ Đọc phiếu thành công (chưa chấm — nhập đáp án chuẩn để chấm điểm).",
-                "#107C41",
-            )
+            if ids and ids.exam_code:
+                self._set_status(
+                    f"⚠️ Nhận diện mã đề {ids.exam_code} (Đợt {target_sess}) nhưng chưa có đáp án chuẩn để tính điểm.",
+                    "#C05000",
+                )
+            else:
+                self._set_status(
+                    "✅ Đọc phiếu thành công (chưa chấm — nhập đáp án chuẩn để chấm điểm).",
+                    "#107C41",
+                )
 
         # Lưu tự động vào cơ sở dữ liệu đợt thi tương ứng
         try:
@@ -1421,18 +1446,25 @@ class OMRApp(tk.Tk):
     def _open_session_manager(self):
         SessionManagerDialog(self, self.session_manager, self.current_session_code, self._set_session)
 
+    def _refresh_session_and_keys_ui(self):
+        self.current_session_code = self.session_manager.resolve_session_code(self.current_session_code)
+        sess = self.session_manager.get_session(self.current_session_code)
+        name = sess["name"] if sess else self.current_session_code
+        self._lbl_session_info.configure(text=f"Đợt thi: {self.current_session_code} - {name[:16]}")
+        self._refresh_ui()
+
     def _set_session(self, code: str):
-        self.current_session_code = code
-        sess = self.session_manager.get_session(code)
-        name = sess["name"] if sess else code
-        self._lbl_session_info.configure(text=f"Đợt thi: {code} - {name[:16]}")
-        self._set_status(f"Đã chọn đợt thi: {code} ({name})", "#107C41")
+        self.current_session_code = self.session_manager.resolve_session_code(code)
+        self._refresh_session_and_keys_ui()
+        sess = self.session_manager.get_session(self.current_session_code)
+        name = sess["name"] if sess else self.current_session_code
+        self._set_status(f"Đã chọn đợt thi: {self.current_session_code} ({name})", "#107C41")
 
     def _open_student_manager(self):
         StudentManagerDialog(self, self.session_manager)
 
     def _open_exam_code_manager(self):
-        ExamCodeManagerDialog(self, self.session_manager, self.current_session_code)
+        ExamCodeManagerDialog(self, self.session_manager, self.current_session_code, on_changed_callback=self._refresh_session_and_keys_ui)
 
     def _open_batch_processor(self):
         BatchProcessorDialog(self, self.session_manager, self.current_session_code)

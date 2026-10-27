@@ -130,7 +130,7 @@ class SessionManager:
 
     def update_session(self, session_code: str, **kwargs) -> dict:
         """Cập nhật thông tin đợt thi."""
-        session_code = str(session_code).strip()
+        session_code = self.resolve_session_code(session_code)
         session = self.get_session(session_code)
         if session is None:
             raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
@@ -180,7 +180,7 @@ class SessionManager:
 
     def lock_session(self, session_code: str, reason: str = "", operator: str = "admin") -> dict:
         """Khóa đợt thi để không nhận bài mới và không cho phép sửa kết quả."""
-        session_code = str(session_code).strip()
+        session_code = self.resolve_session_code(session_code)
         sess = self.get_session(session_code)
         if not sess:
             raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
@@ -201,7 +201,7 @@ class SessionManager:
 
     def unlock_session(self, session_code: str, reason: str = "", operator: str = "admin") -> dict:
         """Mở khóa đợt thi (ghi nhận lý do và audit log)."""
-        session_code = str(session_code).strip()
+        session_code = self.resolve_session_code(session_code)
         sess = self.get_session(session_code)
         if not sess:
             raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
@@ -222,7 +222,7 @@ class SessionManager:
 
     def close_session(self, session_code: str, reason: str = "", operator: str = "admin") -> dict:
         """Đóng đợt thi chính thức."""
-        session_code = str(session_code).strip()
+        session_code = self.resolve_session_code(session_code)
         sess = self.get_session(session_code)
         if not sess:
             raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
@@ -243,7 +243,7 @@ class SessionManager:
 
     def get_session_audit_logs(self, session_code: str) -> list[dict]:
         """Lấy lịch sử thao tác khóa/mở khóa đợt thi."""
-        session_code = str(session_code).strip()
+        session_code = self.resolve_session_code(session_code)
         conn = get_connection(self.db_path)
         cur = conn.execute(
             "SELECT * FROM session_audit_logs WHERE session_code = ? ORDER BY id ASC",
@@ -251,21 +251,40 @@ class SessionManager:
         )
         return [dict(r) for r in cur.fetchall()]
 
+    def resolve_session_code(self, session_code: str | None) -> str:
+        """Xác định session_code chuẩn xác nhất trong database.
+        1. Ưu tiên khớp chính xác chuỗi session_code lưu trong DB (vd '01').
+        2. Nếu không khớp và session_code có dạng số (vd '1'), tìm đợt thi tương ứng (vd '01' hoặc '001') trong DB.
+        3. Trả về đúng chuỗi session_code đã lưu trong database nếu tìm thấy.
+        4. Nếu không tìm thấy trong DB, trả về session_code gốc đã chuẩn hóa khoảng trắng.
+        """
+        if session_code is None:
+            return ""
+        s = str(session_code).strip()
+        if not s:
+            return ""
+        conn = get_connection(self.db_path)
+        cur = conn.execute("SELECT session_code FROM exam_sessions WHERE session_code = ?", (s,))
+        row = cur.fetchone()
+        if row:
+            return str(row["session_code"])
+        if s.isdigit():
+            for alt in [s.zfill(2), s.zfill(3), s.lstrip("0")]:
+                if alt and alt != s:
+                    cur = conn.execute("SELECT session_code FROM exam_sessions WHERE session_code = ?", (alt,))
+                    row = cur.fetchone()
+                    if row:
+                        return str(row["session_code"])
+        return s
+
     def get_session(self, session_code: str) -> dict | None:
-        """Lấy thông tin đợt thi theo mã (hỗ trợ chuẩn hóa số 0 ở đầu)."""
-        session_code = str(session_code).strip()
+        """Lấy thông tin đợt thi theo mã (đồng bộ chuẩn hóa số 0 ở đầu)."""
+        session_code = self.resolve_session_code(session_code)
+        if not session_code:
+            return None
         conn = get_connection(self.db_path)
         cur = conn.execute("SELECT * FROM exam_sessions WHERE session_code = ?", (session_code,))
         row = cur.fetchone()
-        if not row and session_code.isdigit():
-            # Thử tìm dạng zfill hoặc lstrip nếu mã có dạng số
-            for alt in [session_code.zfill(2), session_code.zfill(3), session_code.lstrip("0")]:
-                if alt and alt != session_code:
-                    cur = conn.execute("SELECT * FROM exam_sessions WHERE session_code = ?", (alt,))
-                    row = cur.fetchone()
-                    if row:
-                        session_code = alt
-                        break
         if not row:
             return None
         res = dict(row)
@@ -506,7 +525,7 @@ class SessionManager:
         overwrite: bool = True,
     ) -> dict | None:
         """Lưu hoặc cập nhật bộ đáp án cho mã đề trong đợt thi."""
-        session_code = str(session_code).strip()
+        session_code = self.resolve_session_code(session_code)
         exam_code = str(exam_code).strip()
         if not session_code or not exam_code:
             raise OMRError("Mã đợt thi và mã đề không được để trống.")
@@ -549,7 +568,7 @@ class SessionManager:
 
     def get_answer_key(self, session_code: str, exam_code: str) -> list[str] | None:
         """Lấy bộ đáp án đúng theo Mã đợt thi + Mã đề."""
-        session_code = str(session_code).strip()
+        session_code = self.resolve_session_code(session_code)
         exam_code = str(exam_code).strip()
         conn = get_connection(self.db_path)
         cur = conn.execute(
@@ -563,7 +582,7 @@ class SessionManager:
 
     def list_exam_codes(self, session_code: str) -> list[dict]:
         """Liệt kê tất cả các mã đề trong một đợt thi."""
-        session_code = str(session_code).strip()
+        session_code = self.resolve_session_code(session_code)
         conn = get_connection(self.db_path)
         cur = conn.execute(
             "SELECT session_code, exam_code, source, created_at, answers_json FROM exam_codes WHERE session_code = ? ORDER BY exam_code ASC",
@@ -579,7 +598,7 @@ class SessionManager:
 
     def delete_exam_code(self, session_code: str, exam_code: str) -> bool:
         """Xóa một mã đề khỏi đợt thi qua transaction an toàn."""
-        session_code = str(session_code).strip()
+        session_code = self.resolve_session_code(session_code)
         exam_code = str(exam_code).strip()
         sess = self.get_session(session_code)
         if not sess:
@@ -849,7 +868,7 @@ class SessionManager:
         extra_review_reasons: list[str] | None = None,
     ) -> dict:
         """Lưu kết quả bài thi. Tự động kiểm tra trùng lặp và chấm điểm."""
-        session_code = str(session_code).strip()
+        session_code = self.resolve_session_code(session_code)
         sess = self.get_session(session_code)
         if not sess:
             raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")
@@ -1053,7 +1072,7 @@ class SessionManager:
         status: str | None = None,
     ) -> list[dict]:
         """Lấy danh sách kết quả bài thi theo bộ lọc."""
-        session_code = str(session_code).strip()
+        session_code = self.resolve_session_code(session_code)
         conn = get_connection(self.db_path)
         query = "SELECT * FROM exam_results WHERE session_code = ?"
         params: list[Any] = [session_code]
@@ -1081,7 +1100,7 @@ class SessionManager:
 
     def re_grade_session(self, session_code: str) -> int:
         """Chấm lại toàn bộ bài thi trong đợt thi khi đáp án chuẩn hoặc ngưỡng điểm thay đổi."""
-        session_code = str(session_code).strip()
+        session_code = self.resolve_session_code(session_code)
         sess = self.get_session(session_code)
         if not sess:
             raise OMRError(f"Đợt thi '{session_code}' không tồn tại.")

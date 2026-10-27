@@ -110,7 +110,7 @@ class SessionManagerDialog(tk.Toplevel):
         for s in sessions:
             tag = "selected" if s["session_code"] == self.current_session else ""
             classes_str = ", ".join(s.get("class_codes", []))
-            self.tree.insert("", "end", values=(
+            self.tree.insert("", "end", iid=s["session_code"], values=(
                 s["session_code"],
                 s["name"],
                 s["subject"],
@@ -164,7 +164,8 @@ class SessionManagerDialog(tk.Toplevel):
         if not sel:
             messagebox.showwarning("Chú ý", "Vui lòng chọn đợt thi cần sửa.", parent=self)
             return
-        code = self.tree.item(sel[0])["values"][0]
+        code = str(self.tree.set(sel[0], "code") or sel[0]).strip()
+        code = self.mgr.resolve_session_code(code)
         sess = self.mgr.get_session(code)
         if not sess:
             return
@@ -211,7 +212,8 @@ class SessionManagerDialog(tk.Toplevel):
         if not sel:
             messagebox.showwarning("Chú ý", "Vui lòng chọn đợt thi.", parent=self)
             return
-        code = str(self.tree.item(sel[0])["values"][0])
+        code = str(self.tree.set(sel[0], "code") or sel[0]).strip()
+        code = self.mgr.resolve_session_code(code)
         self.on_select(code)
         self.destroy()
 
@@ -220,7 +222,8 @@ class SessionManagerDialog(tk.Toplevel):
         if not sel:
             messagebox.showwarning("Chú ý", "Vui lòng chọn đợt thi cần chấm lại.", parent=self)
             return
-        code = str(self.tree.item(sel[0])["values"][0])
+        code = str(self.tree.set(sel[0], "code") or sel[0]).strip()
+        code = self.mgr.resolve_session_code(code)
         if messagebox.askyesno("Xác nhận", f"Bạn có chắc muốn chấm lại toàn bộ các bài thi trong đợt '{code}'?", parent=self):
             try:
                 count = self.mgr.re_grade_session(code)
@@ -505,7 +508,7 @@ class ReviewScannedKeysDialog(tk.Toplevel):
 
 
 class ExamCodeManagerDialog(tk.Toplevel):
-    def __init__(self, parent, session_manager: SessionManager, session_code: str):
+    def __init__(self, parent, session_manager: SessionManager, session_code: str, on_changed_callback: Callable | None = None):
         super().__init__(parent)
         self.title("Quản lý Mã đề & Bộ đáp án chuẩn")
         self.geometry("820x520")
@@ -514,7 +517,8 @@ class ExamCodeManagerDialog(tk.Toplevel):
         self.grab_set()
 
         self.mgr = session_manager
-        self.session_code = session_code
+        self.session_code = self.mgr.resolve_session_code(session_code)
+        self.on_changed_callback = on_changed_callback
         self._build_ui()
         self._load_codes()
 
@@ -569,8 +573,11 @@ class ExamCodeManagerDialog(tk.Toplevel):
         self.lbl_status.pack(fill="x")
 
     def _on_session_changed(self, event=None):
-        self.session_code = self.cbo_session.get().strip()
+        raw = self.cbo_session.get().strip()
+        self.session_code = self.mgr.resolve_session_code(raw)
         self._load_codes()
+        if self.on_changed_callback:
+            self.on_changed_callback()
 
     def _load_codes(self):
         for i in self.tree.get_children():
@@ -579,9 +586,9 @@ class ExamCodeManagerDialog(tk.Toplevel):
         for c in codes:
             ans = c.get("answers", [])
             preview = "".join(f"{idx+1}:{a} " for idx, a in enumerate(ans[:15])) + ("..." if len(ans) > 15 else "")
-            self.tree.insert("", "end", iid=c["exam_code"], values=(c["exam_code"], c["source"], preview, c["created_at"][:19]))
+            self.tree.insert("", "end", iid=str(c["exam_code"]), values=(str(c["exam_code"]), c["source"], preview, c["created_at"][:19]))
 
-        code_names = sorted([c["exam_code"] for c in codes])
+        code_names = sorted([str(c["exam_code"]) for c in codes])
         std_codes = {"101", "102", "103", "104"}
         missing = std_codes - set(code_names)
         status_txt = f"Đợt thi '{self.session_code}': Đã có {len(codes)} mã đề ({', '.join(code_names) or 'Chưa có'})."
@@ -594,6 +601,14 @@ class ExamCodeManagerDialog(tk.Toplevel):
         else:
             status_txt += " ⚠️ Chưa có bộ đáp án chuẩn nào!"
             self.lbl_status.configure(text=status_txt, fg="#C00000")
+
+    def _notify_change(self):
+        self._load_codes()
+        if self.on_changed_callback:
+            try:
+                self.on_changed_callback()
+            except Exception:
+                pass
 
     def _add_exam_code(self):
         win = tk.Toplevel(self)
@@ -647,7 +662,7 @@ class ExamCodeManagerDialog(tk.Toplevel):
                 self.mgr.set_answer_key(self.session_code, ecode, ans_list, source="manual")
                 messagebox.showinfo("Thành công", f"Đã lưu thành công bộ đáp án cho mã đề {ecode}!", parent=win)
                 win.destroy()
-                self._load_codes()
+                self._notify_change()
             except Exception as e:
                 messagebox.showerror("Lỗi", str(e), parent=win)
 
@@ -659,7 +674,7 @@ class ExamCodeManagerDialog(tk.Toplevel):
             try:
                 cnt = self.mgr.import_answer_keys_from_excel(self.session_code, f)
                 messagebox.showinfo("Thành công", f"Đã nhập {cnt} bộ đáp án từ file Excel!", parent=self)
-                self._load_codes()
+                self._notify_change()
             except Exception as e:
                 messagebox.showerror("Lỗi nhập Excel", str(e), parent=self)
 
@@ -669,7 +684,7 @@ class ExamCodeManagerDialog(tk.Toplevel):
             try:
                 cnt = self.mgr.import_answer_keys_from_csv(self.session_code, f)
                 messagebox.showinfo("Thành công", f"Đã nhập {cnt} bộ đáp án từ file CSV!", parent=self)
-                self._load_codes()
+                self._notify_change()
             except Exception as e:
                 messagebox.showerror("Lỗi nhập CSV", str(e), parent=self)
 
@@ -679,7 +694,7 @@ class ExamCodeManagerDialog(tk.Toplevel):
             try:
                 cnt = self.mgr.import_answer_keys_from_json(f, default_session_code=self.session_code)
                 messagebox.showinfo("Thành công", f"Đã nhập {cnt} bộ đáp án từ file JSON!", parent=self)
-                self._load_codes()
+                self._notify_change()
             except Exception as e:
                 messagebox.showerror("Lỗi nhập JSON", str(e), parent=self)
 
@@ -704,7 +719,7 @@ class ExamCodeManagerDialog(tk.Toplevel):
             session_manager=self.mgr,
             session_code=self.session_code,
             scanned_items=scanned_items,
-            on_saved_callback=self._load_codes,
+            on_saved_callback=self._notify_change,
         )
 
     def _delete_selected(self):
@@ -712,7 +727,7 @@ class ExamCodeManagerDialog(tk.Toplevel):
         if not sel:
             messagebox.showwarning("Chú ý", "Vui lòng chọn một mã đề để xóa.", parent=self)
             return
-        ecode = sel[0]
+        ecode = str(self.tree.set(sel[0], "code") or sel[0]).strip()
         confirm = messagebox.askyesno(
             "Xác nhận xóa",
             f"Bạn có chắc muốn xóa mã đề '{ecode}' khỏi đợt thi '{self.session_code}'?",
@@ -721,7 +736,7 @@ class ExamCodeManagerDialog(tk.Toplevel):
         if confirm:
             try:
                 self.mgr.delete_exam_code(self.session_code, ecode)
-                self._load_codes()
+                self._notify_change()
                 messagebox.showinfo("Đã xóa", f"Đã xóa mã đề {ecode}!", parent=self)
             except Exception as e:
                 messagebox.showerror("Lỗi", str(e), parent=self)
@@ -744,7 +759,7 @@ class ExamCodeManagerDialog(tk.Toplevel):
                 f"- Bộ đáp án chuẩn: {stats['exam_codes']}",
                 parent=self,
             )
-            self._load_codes()
+            self._notify_change()
 
 
 # ── 4. DIALOG CHẤM BÀI HÀNG LOẠT (BATCH PROCESSING) ──────────────────────────
@@ -752,14 +767,14 @@ class ExamCodeManagerDialog(tk.Toplevel):
 class BatchProcessorDialog(tk.Toplevel):
     def __init__(self, parent, session_manager: SessionManager, session_code: str):
         super().__init__(parent)
-        self.title(f"Chấm bài thi hàng loạt — Đợt thi: {session_code}")
+        self.mgr = session_manager
+        self.session_code = self.mgr.resolve_session_code(session_code)
+        self.title(f"Chấm bài thi hàng loạt — Đợt thi: {self.session_code}")
         self.geometry("960x560")
         self.minsize(780, 440)
         self.configure(bg=COLOR_BG)
         self.grab_set()
 
-        self.mgr = session_manager
-        self.session_code = session_code
         self.processor = BatchProcessor(self.mgr, self.session_code)
         self._is_processing = False
 
@@ -879,8 +894,11 @@ class BatchProcessorDialog(tk.Toplevel):
         if self._is_processing:
             return
 
-        # Kiểm tra trước xem đợt thi đã có đáp án chuẩn chưa
+        # Xác định chính xác mã đợt thi và kiểm tra đáp án chuẩn
+        self.session_code = self.mgr.resolve_session_code(self.session_code)
         codes = self.mgr.list_exam_codes(self.session_code)
+        code_names = sorted([str(c["exam_code"]) for c in codes])
+
         if not codes:
             proceed = messagebox.askyesno(
                 "Cảnh báo thiếu đáp án chuẩn",
@@ -892,6 +910,22 @@ class BatchProcessorDialog(tk.Toplevel):
             )
             if not proceed:
                 return
+        else:
+            std_codes = {"101", "102", "103", "104"}
+            missing_std = sorted(list(std_codes - set(code_names)))
+            # Nếu đã có đủ 4 mã đề chuẩn (hoặc nhiều hơn), không cần hiện cảnh báo thiếu
+            # Chỉ cảnh báo nếu còn thiếu mã trong bộ 101-104 và nhắc người dùng rõ ràng
+            if missing_std and len(code_names) < 4:
+                proceed = messagebox.askyesno(
+                    "Xác nhận đáp án chuẩn",
+                    f"Đợt thi '{self.session_code}' hiện đã có {len(code_names)} mã đề: {', '.join(code_names)}.\n"
+                    f"Các mã đề chuẩn còn thiếu: {', '.join(missing_std)}.\n\n"
+                    f"Nếu bài thi thuộc các mã chưa có đáp án, bài đó sẽ ở trạng thái 'Cần kiểm tra'.\n"
+                    f"Bạn có muốn tiếp tục bắt đầu chấm không?",
+                    parent=self,
+                )
+                if not proceed:
+                    return
 
         self._is_processing = True
         self.btn_run.configure(state="disabled", text="ĐANG XỬ LÝ...")
