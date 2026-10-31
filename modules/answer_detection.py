@@ -142,7 +142,13 @@ def bubble_centers(config: AnswerConfig) -> list[list[tuple[int, int]]]:
 
 
 def classify_ratios(ratios: list[float], fill_threshold: float) -> str:
-    """Không ép chọn đáp án khi chưa tô hoặc có nhiều ô vượt ngưỡng."""
+    """Phân loại kết quả tô câu hỏi dựa trên tỷ lệ pixel mực (fill_threshold).
+    
+    Quy tắc phân loại:
+      - 0 ô vượt ngưỡng fill_threshold: 'BLANK' (học sinh bỏ trống câu này).
+      - Đúng 1 ô vượt ngưỡng: Trả về chữ cái ô đó ('A', 'B', 'C', hoặc 'D').
+      - Từ 2 ô trở lên vượt ngưỡng: 'MULTIPLE' (học sinh tô nhiều hơn 1 đáp án).
+    """
     selected = []
     for label, ratio in zip(CHOICES, ratios):
         if ratio >= fill_threshold:
@@ -160,8 +166,15 @@ def analyze_answers(
 ) -> AnswerDetectionResult:
     """Đo mực trong lòng ô; kiểm tra viền bubble để từ chối layout lệch.
 
-    Việc kiểm tra viền giúp phân biệt phiếu trắng với giấy không có mẫu OMR.
-    Đây không phải bộ tự tìm layout; config phải khớp mẫu phiếu đã warp.
+    Thuật toán:
+      1. Nhị phân hóa vùng đáp án bằng adaptive thresholding.
+      2. Tạo mask hình tròn lòng ô (sample_mask) và mask vành khuyên viền ô (ring_mask).
+      3. Với mỗi câu trong 50 câu (4 ô A, B, C, D):
+         - Cắt patch cục bộ quanh tâm ô.
+         - Dùng np.count_nonzero đếm số pixel mực (255) trong sample_mask.
+         - Tính fill_ratio = pixel_mực / tổng_pixel_mặt_nạ.
+      4. Phân loại đáp án bằng classify_ratios().
+      5. Vẽ hình tròn cv2.circle và text cv2.putText đánh dấu kết quả lên ảnh.
     """
     config = config or AnswerConfig()
     validate_config(config)

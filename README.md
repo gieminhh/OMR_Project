@@ -1,105 +1,82 @@
-# OMR SCANNER — Python/OpenCV 
+# OMR SCANNER — Python/OpenCV (Hệ thống chấm trắc nghiệm 50 câu)
 
-Thank you for the collaboration and support from Ngatran2784
+Đề tài: **Đọc kết quả từ phiếu trả lời trắc nghiệm bằng Computer Vision (OpenCV & Python)**.  
+Chương trình sử dụng các thuật toán thị giác máy tính cơ bản: phát hiện biên Canny, tìm contour, xấp xỉ đa giác, nắn phối cảnh Perspective Transform và đo tỷ lệ pixel mực (countNonZero).
 
-[VIE] Bản tiếng Việt
-CLI `main.py` vẫn là công cụ nhận diện riêng; `score_result` từ CLI là `None`.
+---
 
-## Bố cục cửa sổ co giãn — 20/10/2026
+## 1. Khởi chạy nhanh (Quick Start)
 
-Thanh công cụ, vùng nội dung và thanh dưới cùng được đặt ở ba hàng riêng.
-Chỉ phần ảnh/bảng đáp án co giãn; nút **Xuất Excel** luôn có chỗ ở cuối cửa sổ.
-Thanh công cụ chia thành dòng thông tin và dòng thao tác để các nút không bị
-đẩy ra ngoài khi tên ảnh dài. Thông báo và thống kê tự xuống dòng.
-
-Cửa sổ mở với kích thước phù hợp màn hình, chừa chỗ cho thanh hệ thống.
-Ảnh preview thu nhỏ theo khung thực tế; chỉ cuộn trong bảng để xem đủ 50 câu.
-Cửa sổ camera cũng có thể đổi kích thước, các nút chụp/tách nền/dùng ảnh luôn
-nằm ngoài vùng ảnh co giãn. Đã kiểm tra bố cục cửa sổ chính đến 780 × 500 và
-camera đến 600 × 460 bằng vị trí/kích thước widget thực tế của Tk.
-
-Chạy kiểm thử bố cục: `python -m unittest tests.test_layout -v`.
-
-## Tách nền ngay khi xem ảnh — 20/10/2026
-
-- **Ảnh camera:** nhấn **Chụp → Tách nền → Dùng ảnh → Đọc phiếu**.
-  Có thể chọn **Ảnh gốc** để hoàn tác hoặc **Chụp lại** để lấy ảnh mới.
-- **Ảnh trong máy:** nhấn **Chọn ảnh → Tách nền** ở phía trên khung xem
-  ảnh, kiểm tra kết quả rồi nhấn **Đọc phiếu**.
-- “Tách nền” ở đây là tìm bốn góc, bỏ vùng bên ngoài tờ giấy và căn thẳng
-  phiếu về 1000 × 1400. Không xóa chữ/nét tô trong phiếu và không xuất nền alpha.
-- Xử lý chạy trong thread nền, có thông báo đang xử lý. Nếu không tìm được
-  phiếu, app hiển thị lỗi và giữ ảnh hiện tại để thử lại/chụp lại.
-- Ảnh gốc không bị ghi đè. Bản đã tách từ ảnh chọn lưu riêng ở
-  `output/background_removed/`; ảnh camera và bản gốc ở `output/camera/`.
-  Đây là tệp làm việc tự sinh, đã được loại khỏi Git.
-- Chương trình nhớ ảnh nào đã căn thẳng, kể cả khi mở lại app, và bỏ qua
-  bước tìm viền lần hai khi đọc đáp án. Chọn ảnh mới sẽ reset trạng thái này.
-
-Thuật toán ở `modules/background_removal.py`, GUI chỉ gọi hàm và hiển thị.
-Nền phức tạp, giấy cong hoặc mất góc vẫn có thể khiến không tách được phiếu;
-nút này đưa bước căn thẳng ra màn hình xem trước, không thay thế giới hạn
-nhận diện đã nêu bên dưới.
-
-```powershell
-.\.venv\Scripts\python.exe run_gui.py
-.\.venv\Scripts\python.exe -m unittest tests.test_background_removal tests.test_gui -v
-```
-
-Kiểm thử camera dùng frame mô phỏng từ ảnh thật; cần thử thêm với webcam thực
-tế của người dùng để kiểm chứng chất lượng ảnh chụp và driver camera.
-
-## Sửa nhận diện phiếu thật — 15/10/2026
-
-Ảnh `test_images/printed_50_real.png` từng bị báo nhầm là crop mất góc dù thấy
-đủ tờ phiếu. Có hai nguyên nhân đã được xác minh:
-
-- Nền chăn có họa tiết sáng nối với vùng giấy ở ngưỡng Otsu. Bước tìm phiếu
-  nay thử thêm các ngưỡng sáng và loại cầu nối mảnh theo kích thước ảnh, chỉ
-  bù vết lõm khi contour gần lồi. Vẫn từ chối vùng chạm mép, không bỏ kiểm tra crop.
-- `config/layout.json` là layout mẫu phát triển, không khớp phiếu in thực tế.
-  Nay tự nhận mẫu có 6 cặp mốc đen giữa hai cột, cộng hai mốc ngoài ở đầu bảng.
-  Module `printed_form.py` dùng các mốc để chia 5 nhóm × 5 câu, rồi tinh chỉnh
-  tâm bubble trong phạm vi nhỏ. Viền in mờ được kiểm tra bằng ngưỡng riêng;
-  không giảm ngưỡng tô để cố lấy đáp án và không dùng màu mực để suy ra lựa chọn.
-
-Thông số mẫu ở `config/printed_50.json`. Không truyền `--layout` để tự nhận mẫu;
-nếu truyền `--layout`, chương trình tôn trọng cấu hình đó. Kết quả có
-`layout_name`: `printed_50`, `sample_grid` hoặc `custom`.
-
-Mở GUI (sau khi đóng phiên bản đang chạy):
-
-```powershell
-.\.venv\Scripts\python.exe run_gui.py
-```
-
-Kiểm tra lại đúng ảnh thật và lưu các bước debug:
-
-```powershell
-.\.venv\Scripts\python.exe main.py test_images/printed_50_real.png --debug --output-dir output/real_sheet_after
-.\.venv\Scripts\python.exe -m unittest tests.test_printed_form -v
-```
-
-Ảnh này đọc được 50 câu: 49 câu chọn một ô, câu 44 `BLANK`. Kiểm thử đối chiếu
-với đáp án **đọc bằng mắt từ ảnh**, không phải lấy output của chương trình làm
-kết quả kỳ vọng. Các biến thể thu nhỏ 960 × 1280, tăng/giảm sáng và JPEG cũng
-được kiểm tra; ảnh mất góc và mẫu thiếu mốc bị từ chối. Test GUI có luồng chọn
-ảnh thật → preview → đọc phiếu → bảng 50 câu.
-
-Giới hạn: mới hiệu chỉnh trên một mẫu phiếu thật và các biến thể của ảnh đó;
-không đảm bảo mọi mẫu in, mức cong giấy, hướng xoay hay nền phức tạp. Ảnh cũ
-`anh11.jpg` trên bàn vẫn chưa tách được viền. Khi thiếu mốc, chương trình báo
-lỗi thay vì tự đoán. Các mô tả Phase 1–4 dưới đây là lịch sử triển khai ban đầu;
-trạng thái hiện tại và cách mở GUI nằm ở phần trên.
-
-## Cài đặt và chạy trên Windows
-
-Yêu cầu Python 3.11 trở lên. Mở terminal tại thư mục `OMR_Project`:
-
+### Cài đặt môi trường:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe main.py
+```
+
+### Chạy giao diện OMR chính:
+```powershell
+python run_simple_gui.py
+```
+*(Giao diện trực quan: Chọn ảnh $\to$ Đọc phiếu 50 câu $\to$ Nạp đáp án chuẩn $\to$ Chấm điểm $\to$ Xuất file Excel).*
+
+### Chạy các Demo minh họa từng bước:
+```powershell
+# Demo 1: Tiền xử lý & căn chỉnh phối cảnh phiếu OMR
+python demos/demo_preprocessing.py test_images/sample_photo.png
+
+# Demo 2: Nhận diện 50 câu & xuất ảnh đánh dấu
+python demos/demo_detect_answers.py test_images/printed_50_real.png
+
+# Demo 3: Chấm điểm & xuất Excel 2 chế độ
+python demos/demo_scoring.py
+
+# Kiểm thử tự động hóa giao diện
+python -m unittest tests.test_simple_gui -v
+```
+
+### Chạy toàn bộ bài kiểm thử tự động:
+```powershell
+python -m unittest discover -s tests -v
+```
+
+---
+
+## 2. Cấu trúc thư mục
+
+```text
+OMR_Project/
+├── main.py                      # CLI nhận diện 50 câu & API lõi (điều phối chung)
+├── run_simple_gui.py            # Launcher khởi chạy giao diện OMR
+├── requirements.txt             # Thư viện: opencv-python, numpy, openpyxl, Pillow
+│
+├── config/
+│   ├── layout.json              # Cấu hình lưới phát triển 50 câu
+│   └── printed_50.json          # Tham số mốc đen định vị mẫu in THPT thật
+│
+├── modules/
+│   ├── image_processing.py     # Đọc Unicode, resize, grayscale, Gaussian blur, threshold
+│   ├── paper_detection.py       # Canny, contour, approxPolyDP, Perspective Transform
+│   ├── background_removal.py    # Tách nền & căn phẳng phiếu về 1000x1400 px
+│   ├── printed_form.py          # Quét 6 cặp mốc đen định vị mẫu in thật
+│   ├── answer_detection.py      # Đo pixel mực (countNonZero), phân loại A/B/C/D/BLANK/MULTIPLE
+│   ├── validation.py            # Kiểm tra tính hợp lệ dữ liệu 50 câu
+│   ├── scoring.py               # Đọc đáp án chuẩn JSON & chấm điểm thang 10
+│   ├── export_excel.py          # Xuất Excel 2 chế độ (chưa chấm & đã chấm)
+│   └── errors.py                # Cây ngoại lệ dự kiến (OMRError...)
+│
+├── gui/
+│   └── simple_app.py            # Giao diện Tkinter + ttk (bảng có màu, score card nổi bật)
+│
+├── demos/                       # Scripts demo minh họa từng phần độc lập
+│   ├── demo_preprocessing.py    # Demo tiền xử lý & căn chỉnh phiếu
+│   ├── demo_detect_answers.py   # Demo nhận diện 50 câu
+│   └── demo_scoring.py          # Demo chấm điểm & xuất Excel
+│
+├── answer_key/                  # File đáp án chuẩn JSON (answer_key.json, test_key.json)
+├── test_images/                 # Ảnh mẫu thử nghiệm (sample_photo.png, printed_50_real.png...)
+├── scripts/generate_samples.py  # Sinh ảnh fixture tổng hợp
+├── tests/                       # Toàn bộ bài kiểm thử tự động (49 tests)
+└── output/                      # Thư mục lưu kết quả ảnh & Excel
 ```
 
 Lệnh cuối hiển thị hướng dẫn, chưa mở GUI. Thư mục `.venv` không được đưa lên

@@ -1,4 +1,8 @@
-"""Launcher cho giao diện OMR — chạy: python run_gui.py"""
+"""Khởi chạy giao diện Tkinter đọc phiếu trắc nghiệm OMR 50 câu.
+Sử dụng: python run_simple_gui.py
+"""
+
+import subprocess
 import sys
 from pathlib import Path
 
@@ -6,8 +10,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-import subprocess
 
 
 def _try_venv_rerun() -> bool:
@@ -31,15 +33,14 @@ def _try_venv_rerun() -> bool:
 
 
 try:
-    from gui.app import launch_app
+    from gui.simple_app import launch_simple_app
 except Exception as exc:  # noqa: BLE001
     text = str(exc).lower()
     if "tkinter" in text or "tk.tcl" in text or "tcl" in text or "_tkinter" in text:
         if _try_venv_rerun():
             raise SystemExit(0)
         print("Lỗi GUI: Tkinter/Tcl không khả dụng trong Python hiện tại.", file=sys.stderr)
-        print("Dùng môi trường project đã cài sẵn: .\\.venv\\Scripts\\python.exe run_gui.py", file=sys.stderr)
-        print("Hoặc cài Tkinter cho Python đang dùng: python -m pip install tk", file=sys.stderr)
+        print("Dùng môi trường project đã cài sẵn: .\\.venv\\Scripts\\python.exe run_simple_gui.py", file=sys.stderr)
         raise SystemExit(1)
     raise
 
@@ -49,14 +50,12 @@ if __name__ == "__main__":
         if callable(reconfigure):
             reconfigure(encoding="utf-8")
     try:
-        launch_app()
+        launch_simple_app()
     except Exception as exc:  # noqa: BLE001
         text = str(exc).lower()
         if "tkinter" in text or "tk.tcl" in text or "tcl" in text or "_tkinter" in text:
             if _try_venv_rerun():
                 raise SystemExit(0)
             print("Lỗi GUI: Tkinter/Tcl không khả dụng trong Python hiện tại.", file=sys.stderr)
-            print("Dùng môi trường project đã cài sẵn: .\\.venv\\Scripts\\python.exe run_gui.py", file=sys.stderr)
-            print("Hoặc cài Tkinter cho Python đang dùng: python -m pip install tk", file=sys.stderr)
             raise SystemExit(1)
         raise

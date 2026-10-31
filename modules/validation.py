@@ -1,4 +1,4 @@
-"""Kiểm tra danh sách 50 đáp án học sinh — Phase 6."""
+"""Kiểm tra tính hợp lệ của danh sách 50 đáp án học sinh."""
 
 from .errors import OMRError
 

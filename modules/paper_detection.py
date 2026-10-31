@@ -1,4 +1,4 @@
-"""Phát hiện tứ giác lớn và hiệu chỉnh phối cảnh (Phase 3)."""
+"""Phát hiện tứ giác phiếu và hiệu chỉnh phối cảnh bằng OpenCV."""
 
 from dataclasses import dataclass
 
@@ -28,7 +28,13 @@ class PaperConfig:
 
 
 def order_points(points: np.ndarray) -> np.ndarray:
-    """Sắp xếp bốn đỉnh lồi thành TL, TR, BR, BL cho phiếu gần thẳng đứng."""
+    """Sắp xếp bốn đỉnh lồi thành TL (Top-Left), TR (Top-Right), BR (Bottom-Right), BL (Bottom-Left).
+    
+    Thuật toán:
+      - Tính trọng tâm (center) của 4 điểm.
+      - Tính góc cực atan2 của từng đỉnh so với trọng tâm để sắp xếp theo chiều kim đồng hồ.
+      - Xoay mảng để đỉnh có tổng (x + y) nhỏ nhất luôn ở vị trí đầu tiên (Top-Left).
+    """
     points = np.asarray(points, dtype=np.float32)
     if points.size != 8 or not np.isfinite(points).all():
         raise PaperDetectionError("Cần đúng bốn điểm hữu hạn để căn chỉnh phiếu.")
@@ -45,7 +51,15 @@ def order_points(points: np.ndarray) -> np.ndarray:
 def find_paper_contour(
     image: np.ndarray, config: PaperConfig | None = None
 ) -> np.ndarray:
-    """Chọn tứ giác lồi lớn nhất hợp lệ từ cạnh và vùng giấy sáng."""
+    """Chọn tứ giác lồi lớn nhất hợp lệ từ cạnh và vùng giấy sáng.
+    
+    Quy trình:
+      1. cv2.GaussianBlur: Làm mờ nhẹ để khử nhiễu.
+      2. cv2.Canny: Dò biên cạnh của tờ giấy và các đối tượng.
+      3. cv2.findContours: Tìm danh sách các contour khép kín.
+      4. cv2.approxPolyDP: Xấp xỉ contour thành đa giác (tìm contour có đúng 4 đỉnh tứ giác).
+      5. Kiểm tra tính lồi (cv2.isContourConvex), diện tích và chiều dài cạnh hợp lệ.
+    """
     config = config or PaperConfig()
     if not 0 < config.min_area_ratio < 1 or config.border_margin < 0:
         raise PaperDetectionError("Cấu hình diện tích/biên phiếu không hợp lệ.")
@@ -116,7 +130,14 @@ def find_paper_contour(
 def four_point_transform(
     image: np.ndarray, points: np.ndarray, output_size: tuple[int, int] = STANDARD_SIZE
 ) -> np.ndarray:
-    """Warp ảnh về kích thước (width, height) cố định."""
+    """Warp ảnh về kích thước (width, height) cố định bằng phối cảnh (Perspective Transform).
+    
+    Thuật toán:
+      1. order_points: Sắp xếp 4 góc thành TL, TR, BR, BL.
+      2. cv2.getPerspectiveTransform: Tính ma trận biến đổi phối cảnh 3x3 từ 4 góc
+         thực tế sang 4 góc đích hình chữ nhật chuẩn.
+      3. cv2.warpPerspective: Áp dụng ma trận biến đổi để 'nắn thẳng' tờ phiếu chụp nghiêng.
+    """
     validate_image(image)
     if len(output_size) != 2 or any(not isinstance(n, int) or n < 3 for n in output_size):
         raise PaperDetectionError("Kích thước ảnh chuẩn phải gồm hai số nguyên >= 3.")

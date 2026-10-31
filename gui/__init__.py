@@ -1,1 +1,1 @@
-"""Gói giao diện (triển khai ở Phase 9)."""
+"""Giao diện người dùng cho hệ thống OMR."""

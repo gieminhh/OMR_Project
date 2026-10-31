@@ -1,4 +1,4 @@
-"""Đọc/ghi đường dẫn Unicode và tiền xử lý bằng OpenCV (Phase 2)."""
+"""Đọc/ghi đường dẫn Unicode và tiền xử lý ảnh bằng OpenCV."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -95,7 +95,12 @@ def resize_image(image: np.ndarray, max_dimension: int = DEFAULT_MAX_DIMENSION) 
 
 
 def to_grayscale(image: np.ndarray) -> np.ndarray:
-    """Chuyển grayscale/BGR/BGRA thành một kênh."""
+    """Chuyển grayscale/BGR/BGRA thành một kênh (cv2.cvtColor).
+    
+    Thuật toán:
+      - Loại bỏ thông tin màu sắc không cần thiết, chỉ giữ lại độ sáng (luminance).
+      - Giúp giảm dung lượng bộ nhớ (từ 3 kênh xuống 1 kênh) và tăng tốc độ xử lý.
+    """
     validate_image(image)
     if image.ndim == 2:
         return image.copy()
@@ -104,7 +109,12 @@ def to_grayscale(image: np.ndarray) -> np.ndarray:
 
 
 def apply_blur(gray: np.ndarray, kernel_size: int = DEFAULT_BLUR_KERNEL) -> np.ndarray:
-    """Gaussian blur nhẹ để giảm nhiễu trước khi nhị phân hóa."""
+    """Gaussian blur nhẹ để giảm nhiễu trước khi nhị phân hóa (cv2.GaussianBlur).
+    
+    Thuật toán:
+      - Áp dụng bộ lọc Gaussian làm mịn ảnh, giảm nhiễu hạt (noise) từ camera.
+      - Giúp bước phát hiện biên Canny hoặc ngưỡng Threshold đạt độ chính xác cao hơn.
+    """
     gray = to_grayscale(gray)
     if not isinstance(kernel_size, int) or kernel_size < 1 or kernel_size % 2 == 0:
         raise ImageProcessingError("Kích thước Gaussian kernel phải là số lẻ dương.")
@@ -117,7 +127,13 @@ def apply_threshold(
     block_size: int = DEFAULT_BLOCK_SIZE,
     c: float = DEFAULT_THRESHOLD_C,
 ) -> np.ndarray:
-    """Nhị phân đảo: pixel mực là 255, nền giấy là 0."""
+    """Nhị phân đảo: pixel mực là 255 (trắng), nền giấy là 0 (đen).
+    
+    Thuật toán:
+      - Adaptive Threshold: Tính ngưỡng cục bộ cho từng vùng ảnh (block_size x block_size).
+        Rất hiệu quả khi ảnh chụp có bóng đổ, ánh sáng không đồng đều.
+      - Otsu Threshold: Tự động tìm ngưỡng tối ưu phân tách 2 đỉnh phân bố màu (bimodal).
+    """
     gray = to_grayscale(gray)
     if method == "otsu":
         return cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
@@ -135,7 +151,15 @@ def apply_threshold(
 def preprocess_image(
     image: np.ndarray, config: PreprocessConfig | None = None
 ) -> PreprocessedImage:
-    """Resize → grayscale → Gaussian blur → threshold → mở hình thái tùy chọn."""
+    """Chuỗi tiền xử lý chuẩn: Resize → Grayscale → Gaussian Blur → Threshold nhị phân.
+    
+    Quy trình:
+      1. Resize ảnh về kích thước tối đa hợp lý để đồng bộ độ phân giải.
+      2. Chuyển ảnh xám (Grayscale).
+      3. Làm mờ giảm nhiễu (Gaussian Blur).
+      4. Phân ngưỡng nhị phân (Thresholding - pixel mực = 255, nền giấy = 0).
+      5. Áp dụng biến đổi hình thái học Morphology Open (tùy chọn) để khử nhiễu li ti.
+    """
     config = config or PreprocessConfig()
     resized = resize_image(image, config.max_dimension)
     gray = to_grayscale(resized)

@@ -1,4 +1,4 @@
-"""Đọc đáp án chuẩn và chấm điểm 50 câu trắc nghiệm — Phase 6."""
+"""Đọc đáp án chuẩn và chấm điểm 50 câu trắc nghiệm."""
 
 import json
 from pathlib import Path
