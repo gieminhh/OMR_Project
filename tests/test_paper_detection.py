@@ -1,4 +1,4 @@
-"""Phase 3: hình học phối cảnh, ảnh không có phiếu, phiếu mất góc."""
+"""Kiểm thử phát hiện phiếu: hình học phối cảnh, ảnh không có phiếu, phiếu mất góc."""
 
 import unittest
 

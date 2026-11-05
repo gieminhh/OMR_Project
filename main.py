@@ -1,7 +1,5 @@
-"""CLI nhận diện; phối hợp module, tự nhận mẫu in hoặc layout phát triển.
+"""CLI nhận diện và điều phối xử lý phiếu trắc nghiệm OMR."""
 
-process_omr trả score_result=None; run_gui.py chấm điểm và xuất Excel riêng.
-"""
 
 import argparse
 import json
@@ -91,10 +89,10 @@ def process_omr(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI tạm cho phát triển: báo lỗi rõ ràng và trả mã thoát khác 0."""
-    parser = argparse.ArgumentParser(description="OMR SCANNER — bản phát triển Phase 1–4, chưa có GUI/chấm điểm.")
+    """CLI đọc và nhận diện phiếu trắc nghiệm OMR."""
+    parser = argparse.ArgumentParser(description="Hệ thống đọc và nhận diện phiếu trắc nghiệm OMR 50 câu.")
     parser.add_argument("image", nargs="?", type=Path, help="Đường dẫn ảnh phiếu")
-    parser.add_argument("--phase", type=int, choices=(2, 3, 4), default=4)
+    parser.add_argument("--phase", type=int, choices=(2, 3, 4), default=4, help="Mức độ xử lý: 2 (tiền xử lý), 3 (căn phẳng), 4 (nhận diện)")
     parser.add_argument("--questions", type=int, choices=(5, 10, 50), default=50, help="Số câu kiểm thử, mặc định 50")
     parser.add_argument("--layout", type=Path, default=None, help="Cấu hình riêng; bỏ trống để tự nhận mẫu phiếu in hoặc mẫu phát triển")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
@@ -116,10 +114,10 @@ def main(argv: list[str] | None = None) -> int:
             report["source_image"] = str(args.image.resolve())
             report["layout_path"] = str(args.layout.resolve()) if args.layout is not None else None
             (args.output_dir / "answers.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-            print(f"Đã đọc {len(result['answers'])} câu. Chưa chấm điểm (Phase 6).")
+            print(f"Đã đọc {len(result['answers'])} câu.")
             for index, answer in enumerate(result["answers"], start=1):
                 print(f"Câu {index:02}: {answer}")
-        print(f"Kết quả Phase {args.phase}: {args.output_dir.resolve()}")
+        print(f"Kết quả lưu tại: {args.output_dir.resolve()}")
         return 0
     except (OMRError, OSError) as exc:
         print(f"Lỗi: {exc}", file=sys.stderr)

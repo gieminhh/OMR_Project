@@ -1,1 +1,1 @@
-"""Kiểm thử hồi quy theo từng phase."""
+"""Bộ kiểm thử hồi quy cho hệ thống OMR."""

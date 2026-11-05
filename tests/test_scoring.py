@@ -57,6 +57,82 @@ class ScoringTests(unittest.TestCase):
         with self.assertRaises(OMRError):
             score_answers(["A"], ["A"])
 
+    def test_rescore_when_answer_key_changes(self) -> None:
+        """Thay đổi đáp án chuẩn sau khi chấm phải tính lại điểm chính xác."""
+        student = ["A"] * 25 + ["B"] * 25
+        key_1 = ["A"] * 50  # Đúng 25 câu -> 5.0 điểm
+        key_2 = ["B"] * 50  # Đúng 25 câu -> 5.0 điểm
+        key_3 = ["A"] * 25 + ["B"] * 25  # Đúng 50 câu -> 10.0 điểm
+        key_4 = ["C"] * 50  # Đúng 0 câu -> 0.0 điểm
+
+        res_1 = score_answers(student, key_1)
+        self.assertEqual(res_1["score"], 5.0)
+        self.assertEqual(res_1["correct_count"], 25)
+
+        # Đổi sang key_3 (khớp hoàn toàn)
+        res_3 = score_answers(student, key_3)
+        self.assertEqual(res_3["score"], 10.0)
+        self.assertEqual(res_3["correct_count"], 50)
+
+        # Đổi sang key_4 (sai hoàn toàn)
+        res_4 = score_answers(student, key_4)
+        self.assertEqual(res_4["score"], 0.0)
+        self.assertEqual(res_4["correct_count"], 0)
+        self.assertEqual(res_4["wrong_count"], 50)
+
+    def test_all_blank_and_all_multiple_scoring(self) -> None:
+        """Phiếu toàn BLANK hoặc toàn MULTIPLE đạt 0 điểm."""
+        key = ["A"] * 50
+        blanks = ["BLANK"] * 50
+        multiples = ["MULTIPLE"] * 50
+
+        res_blank = score_answers(blanks, key)
+        self.assertEqual(res_blank["score"], 0.0)
+        self.assertEqual(res_blank["blank_count"], 50)
+        self.assertEqual(res_blank["correct_count"], 0)
+
+        res_multi = score_answers(multiples, key)
+        self.assertEqual(res_multi["score"], 0.0)
+        self.assertEqual(res_multi["multiple_count"], 50)
+        self.assertEqual(res_multi["correct_count"], 0)
+
+    def test_missing_answer_key_file(self) -> None:
+        """Thiếu file đáp án chuẩn báo ScoringError."""
+        with self.assertRaises(ScoringError):
+            load_answer_key("non_existent_key_path.json")
+
+    def test_invalid_character_in_answer_key(self) -> None:
+        """Đáp án chuẩn chứa ký tự lạ (E, X...) bị từ chối."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "bad_key.json"
+            bad_key = ["A"] * 49 + ["E"]
+            path.write_text(json.dumps(bad_key), encoding="utf-8")
+            with self.assertRaises(ScoringError):
+                load_answer_key(path)
+
+    def test_score_answers_rejects_invalid_student_answer(self) -> None:
+        """score_answers từ chối đáp án học sinh không hợp lệ (E, X...), không tự tính thành điểm."""
+        key = ["A"] * 50
+        with self.assertRaises(ScoringError):
+            score_answers(["A"] * 49 + ["E"], key)
+        with self.assertRaises(ScoringError):
+            score_answers(["A"] * 49 + ["INVALID"], key)
+        with self.assertRaises(ScoringError):
+            score_answers(["A"] * 49 + [""], key)
+
+    def test_score_answers_rejects_invalid_correct_answer(self) -> None:
+        """score_answers từ chối đáp án chuẩn không thuộc {A, B, C, D}."""
+        student = ["A"] * 50
+        with self.assertRaises(ScoringError):
+            score_answers(student, ["A"] * 49 + ["BLANK"])
+        with self.assertRaises(ScoringError):
+            score_answers(student, ["A"] * 49 + ["E"])
+
+    def test_score_answers_rejects_non_list(self) -> None:
+        """score_answers từ chối dữ liệu không phải dạng list."""
+        with self.assertRaises(ScoringError):
+            score_answers("A" * 50, ["A"] * 50)  # type: ignore
+
 
 if __name__ == "__main__":
     unittest.main()

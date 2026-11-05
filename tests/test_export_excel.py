@@ -32,6 +32,81 @@ class ExportExcelTests(unittest.TestCase):
             with self.assertRaises(OMRError):
                 export_excel({}, Path(folder) / "result.xlsx")
 
+    def test_exports_unscored_mode_1_without_answer_key(self) -> None:
+        """Chế độ 1: Xuất Excel khi chưa chấm điểm, không tự sinh điểm số."""
+        answers = ["A"] * 48 + ["BLANK", "MULTIPLE"]
+        with tempfile.TemporaryDirectory() as folder:
+            output = export_excel(None, Path(folder) / "unscored.xlsx", answers=answers)
+            workbook = openpyxl.load_workbook(output, data_only=True)
+
+        sheet = workbook.active
+        assert sheet is not None
+        self.assertEqual(sheet["A1"].value, "Câu")
+        self.assertEqual(sheet["B1"].value, "Đáp án nhận diện")
+        self.assertEqual(sheet["C1"].value, "Trạng thái")
+        self.assertIsNone(sheet["D1"].value)  # Không có cột đáp án đúng
+
+        # Kiểm tra câu bình thường, blank, multiple
+        self.assertEqual(sheet["B2"].value, "A")
+        self.assertEqual(sheet["C2"].value, "Đã chọn")
+        self.assertEqual(sheet["B50"].value, "BLANK")
+        self.assertEqual(sheet["C50"].value, "— Bỏ trống")
+        self.assertEqual(sheet["B51"].value, "MULTIPLE")
+        self.assertEqual(sheet["C51"].value, "⚠ Nhiều đáp án")
+
+        # Kiểm tra phần tổng kết (không có điểm số)
+        self.assertEqual(sheet["A53"].value, "Tổng số câu")
+        self.assertEqual(sheet["B53"].value, 50)
+        self.assertEqual(sheet["A54"].value, "Số câu đã chọn")
+        self.assertEqual(sheet["B54"].value, 48)
+        self.assertEqual(sheet["A55"].value, "Số câu bỏ trống")
+        self.assertEqual(sheet["B55"].value, 1)
+        self.assertEqual(sheet["A56"].value, "Số câu tô nhiều")
+        self.assertEqual(sheet["B56"].value, 1)
+
+    def test_exports_unscored_from_dict_and_list(self) -> None:
+        """Xuất từ dict (process_omr format) hoặc list thuần."""
+        answers = ["B"] * 50
+        with tempfile.TemporaryDirectory() as folder:
+            # Truyền dict từ process_omr
+            p1 = export_excel({"answers": answers, "score_result": None}, Path(folder) / "res1.xlsx")
+            wb1 = openpyxl.load_workbook(p1)
+            self.assertEqual(wb1.active["B2"].value, "B")
+
+            # Truyền list thuần
+            p2 = export_excel(answers, Path(folder) / "res2.xlsx")
+            wb2 = openpyxl.load_workbook(p2)
+            self.assertEqual(wb2.active["B2"].value, "B")
+
+    def test_rejects_invalid_answer_count_for_unscored(self) -> None:
+        """Chế độ 1 từ chối dữ liệu không đủ 50 câu."""
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaises(OMRError):
+                export_excel(["A"] * 25, Path(folder) / "bad.xlsx")
+
+    def test_multiple_color_is_orange(self) -> None:
+        """Đồng bộ màu MULTIPLE ở Excel thành màu cam nhạt FFE5D0 giống Tkinter."""
+        student = ["A"] * 49 + ["MULTIPLE"]
+        key = ["A"] * 50
+        result = score_answers(student, key)
+
+        with tempfile.TemporaryDirectory() as folder:
+            # 1. Chế độ 2: Đã chấm điểm
+            path_scored = export_excel(result, Path(folder) / "scored.xlsx")
+            wb_scored = openpyxl.load_workbook(path_scored)
+            sheet_scored = wb_scored.active
+            # Câu 50 là dòng 51 trong Excel (tiêu đề ở dòng 1)
+            fill_color = sheet_scored["D51"].fill.fgColor.rgb
+            # openpyxl có thể trả dạng '00FFE5D0' hoặc 'FFE5D0'
+            self.assertTrue("FFE5D0" in str(fill_color))
+
+            # 2. Chế độ 1: Chưa chấm điểm
+            path_unscored = export_excel(None, Path(folder) / "unscored.xlsx", answers=student)
+            wb_unscored = openpyxl.load_workbook(path_unscored)
+            sheet_unscored = wb_unscored.active
+            fill_unscored = sheet_unscored["C51"].fill.fgColor.rgb
+            self.assertTrue("FFE5D0" in str(fill_unscored))
+
 
 if __name__ == "__main__":
     unittest.main()
