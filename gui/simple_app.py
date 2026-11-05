@@ -20,10 +20,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from main import process_omr
-from modules.errors import OMRError
 from modules.export_excel import export_excel
 from modules.image_processing import load_image
-from modules.scoring import ScoringError, load_answer_key, score_answers
+from modules.scoring import load_answer_key, score_answers
 from modules.validation import validate_answers
 
 try:
@@ -453,9 +452,10 @@ class SimpleOMRApp(tk.Tk):
                 self.lbl_stats.configure(
                     text=f"Đã nhận diện đủ 50 câu (Bỏ trống: {v_res['blank_count']}, Tô nhiều: {v_res['multiple_count']})"
                 )
+                # Tuyệt đối không hiển thị số câu đã tô dưới nhãn "Đúng" khi chưa chấm
                 self._update_stat_chips(
-                    v_res["count"] - v_res["blank_count"] - v_res["multiple_count"],
-                    0,
+                    "--",
+                    "--",
                     v_res["blank_count"],
                     v_res["multiple_count"],
                 )
@@ -612,10 +612,10 @@ class SimpleOMRApp(tk.Tk):
             self.chip_blank.configure(text="--")
             self.chip_multi.configure(text="--")
         else:
-            self.chip_correct.configure(text=str(correct))
-            self.chip_wrong.configure(text=str(wrong))
-            self.chip_blank.configure(text=str(blank))
-            self.chip_multi.configure(text=str(multi))
+            self.chip_correct.configure(text="--" if correct is None or correct == "--" else str(correct))
+            self.chip_wrong.configure(text="--" if wrong is None or wrong == "--" else str(wrong))
+            self.chip_blank.configure(text="--" if blank is None or blank == "--" else str(blank))
+            self.chip_multi.configure(text="--" if multi is None or multi == "--" else str(multi))
 
     def _clear_table(self):
         """Xóa toàn bộ dòng trong bảng."""

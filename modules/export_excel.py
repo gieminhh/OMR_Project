@@ -21,7 +21,7 @@ class ExportError(OMRError):
 _COLOR_CORRECT  = "C6EFCE"   # xanh lá nhạt
 _COLOR_WRONG    = "FFC7CE"   # đỏ nhạt
 _COLOR_BLANK    = "FFEB9C"   # vàng nhạt
-_COLOR_MULTIPLE = "BDD7EE"   # xanh lam nhạt
+_COLOR_MULTIPLE = "FFE5D0"   # cam nhạt (đồng bộ giao diện Tkinter)
 _COLOR_HEADER   = "4472C4"   # xanh đậm
 _COLOR_SUMMARY  = "D9E1F2"   # xanh nhạt tổng kết
 

@@ -110,6 +110,29 @@ class ScoringTests(unittest.TestCase):
             with self.assertRaises(ScoringError):
                 load_answer_key(path)
 
+    def test_score_answers_rejects_invalid_student_answer(self) -> None:
+        """score_answers từ chối đáp án học sinh không hợp lệ (E, X...), không tự tính thành điểm."""
+        key = ["A"] * 50
+        with self.assertRaises(ScoringError):
+            score_answers(["A"] * 49 + ["E"], key)
+        with self.assertRaises(ScoringError):
+            score_answers(["A"] * 49 + ["INVALID"], key)
+        with self.assertRaises(ScoringError):
+            score_answers(["A"] * 49 + [""], key)
+
+    def test_score_answers_rejects_invalid_correct_answer(self) -> None:
+        """score_answers từ chối đáp án chuẩn không thuộc {A, B, C, D}."""
+        student = ["A"] * 50
+        with self.assertRaises(ScoringError):
+            score_answers(student, ["A"] * 49 + ["BLANK"])
+        with self.assertRaises(ScoringError):
+            score_answers(student, ["A"] * 49 + ["E"])
+
+    def test_score_answers_rejects_non_list(self) -> None:
+        """score_answers từ chối dữ liệu không phải dạng list."""
+        with self.assertRaises(ScoringError):
+            score_answers("A" * 50, ["A"] * 50)  # type: ignore
+
 
 if __name__ == "__main__":
     unittest.main()

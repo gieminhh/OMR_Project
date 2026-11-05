@@ -7,7 +7,6 @@ from pathlib import Path
 import openpyxl
 
 from gui.simple_app import SimpleOMRApp
-from modules.scoring import score_answers
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -33,6 +32,10 @@ class SimpleGuiTests(unittest.TestCase):
         self.assertEqual(str(self.app.btn_scan["state"]), "disabled")
         self.assertEqual(str(self.app.btn_score["state"]), "disabled")
         self.assertEqual(str(self.app.btn_excel["state"]), "disabled")
+        self.assertEqual(self.app.chip_correct.cget("text"), "--")
+        self.assertEqual(self.app.chip_wrong.cget("text"), "--")
+        self.assertEqual(self.app.chip_blank.cget("text"), "--")
+        self.assertEqual(self.app.chip_multi.cget("text"), "--")
 
     def test_scan_and_unscored_table_and_export(self):
         """Đọc phiếu thành công cập nhật bảng 50 câu và cho phép xuất Excel Chế độ 1."""
@@ -47,6 +50,12 @@ class SimpleGuiTests(unittest.TestCase):
         self.assertEqual(len(children), 50)
         # Nút xuất Excel phải được bật ngay cả khi chưa chấm
         self.assertEqual(str(self.app.btn_excel["state"]), "normal")
+
+        # Khi chưa chấm điểm: tuyệt đối không hiển thị số câu đã tô dưới nhãn Đúng
+        self.assertEqual(self.app.chip_correct.cget("text"), "--")
+        self.assertEqual(self.app.chip_wrong.cget("text"), "--")
+        self.assertEqual(self.app.chip_blank.cget("text"), "0")
+        self.assertEqual(self.app.chip_multi.cget("text"), "0")
 
         # Kiểm tra xuất Excel chế độ 1 (chưa chấm)
         with tempfile.TemporaryDirectory() as folder:
@@ -68,6 +77,12 @@ class SimpleGuiTests(unittest.TestCase):
         self.assertEqual(self.app.score_result["score"], 10.0)
         self.assertEqual(self.app.score_result["correct_count"], 50)
         self.assertEqual(str(self.app.btn_excel["state"]), "normal")
+
+        # Sau khi chấm điểm: hiển thị số câu đúng và sai rõ ràng
+        self.assertEqual(self.app.chip_correct.cget("text"), "50")
+        self.assertEqual(self.app.chip_wrong.cget("text"), "0")
+        self.assertEqual(self.app.chip_blank.cget("text"), "0")
+        self.assertEqual(self.app.chip_multi.cget("text"), "0")
 
     def test_changing_answer_key_updates_score(self):
         """Thay đổi đáp án chuẩn sau khi đã chấm phải tính lại điểm, không giữ điểm cũ."""

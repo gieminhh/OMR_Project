@@ -84,6 +84,29 @@ class ExportExcelTests(unittest.TestCase):
             with self.assertRaises(OMRError):
                 export_excel(["A"] * 25, Path(folder) / "bad.xlsx")
 
+    def test_multiple_color_is_orange(self) -> None:
+        """Đồng bộ màu MULTIPLE ở Excel thành màu cam nhạt FFE5D0 giống Tkinter."""
+        student = ["A"] * 49 + ["MULTIPLE"]
+        key = ["A"] * 50
+        result = score_answers(student, key)
+
+        with tempfile.TemporaryDirectory() as folder:
+            # 1. Chế độ 2: Đã chấm điểm
+            path_scored = export_excel(result, Path(folder) / "scored.xlsx")
+            wb_scored = openpyxl.load_workbook(path_scored)
+            sheet_scored = wb_scored.active
+            # Câu 50 là dòng 51 trong Excel (tiêu đề ở dòng 1)
+            fill_color = sheet_scored["D51"].fill.fgColor.rgb
+            # openpyxl có thể trả dạng '00FFE5D0' hoặc 'FFE5D0'
+            self.assertTrue("FFE5D0" in str(fill_color))
+
+            # 2. Chế độ 1: Chưa chấm điểm
+            path_unscored = export_excel(None, Path(folder) / "unscored.xlsx", answers=student)
+            wb_unscored = openpyxl.load_workbook(path_unscored)
+            sheet_unscored = wb_unscored.active
+            fill_unscored = sheet_unscored["C51"].fill.fgColor.rgb
+            self.assertTrue("FFE5D0" in str(fill_unscored))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,7 @@ from pathlib import Path
 from .errors import OMRError
 
 VALID_ANSWERS = {"A", "B", "C", "D"}
+VALID_STUDENT_ANSWERS = {"A", "B", "C", "D", "BLANK", "MULTIPLE"}
 QUESTION_COUNT = 50
 
 
@@ -73,10 +74,24 @@ def score_answers(student_answers: list[str], correct_answers: list[str]) -> dic
           ]
         }
     """
+    if not isinstance(student_answers, list) or not isinstance(correct_answers, list):
+        raise ScoringError("Danh sách đáp án học sinh và đáp án chuẩn phải là dạng list.")
     if len(student_answers) != QUESTION_COUNT or len(correct_answers) != QUESTION_COUNT:
         raise ScoringError(
             f"Cần đúng {QUESTION_COUNT} câu học sinh và {QUESTION_COUNT} câu đáp án chuẩn."
         )
+
+    for i, correct in enumerate(correct_answers, start=1):
+        if not isinstance(correct, str) or correct not in VALID_ANSWERS:
+            raise ScoringError(
+                f"Câu {i}: đáp án chuẩn '{correct}' không hợp lệ; chỉ chấp nhận {sorted(VALID_ANSWERS)}."
+            )
+
+    for i, student in enumerate(student_answers, start=1):
+        if not isinstance(student, str) or student not in VALID_STUDENT_ANSWERS:
+            raise ScoringError(
+                f"Câu {i}: đáp án học sinh '{student}' không hợp lệ; chỉ chấp nhận {sorted(VALID_STUDENT_ANSWERS)}."
+            )
 
     details = []
     correct_count = wrong_count = blank_count = multiple_count = 0

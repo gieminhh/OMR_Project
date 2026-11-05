@@ -23,13 +23,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import cv2
-import numpy as np
-
 from modules.answer_detection import analyze_answers, load_layout
 from modules.errors import OMRError
 from modules.image_processing import load_image, resize_image, save_image
-from modules.paper_detection import PaperConfig, detect_and_warp_paper
+from modules.paper_detection import detect_and_warp_paper
 from modules.printed_form import detect_printed_layout
 
 DEFAULT_LAYOUT_PATH = ROOT / "config" / "layout.json"
