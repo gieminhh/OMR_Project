@@ -46,14 +46,18 @@ python run_simple_gui.py
 
 **Quy trình sử dụng trên giao diện:**
 1. **Chọn ảnh:** Mở file ảnh chụp phiếu trắc nghiệm (`.jpg`, `.png`, `.jpeg`).
-2. **Đọc phiếu:** OpenCV tự động tìm 4 góc, căn phẳng phiếu thi và nhận diện 50 câu. Bảng kết quả hiển thị 50 câu kèm trạng thái "Đã chọn", "Bỏ trống", hoặc "Nhiều đáp án". Khi chưa nạp đáp án chuẩn, nhãn "Đúng / Sai" hiển thị trạng thái `--` (không đoán mò).
-3. **Nạp đáp án:** Chọn tệp JSON đáp án chuẩn (có sẵn mẫu tại `answer_key/answer_key.json`).
-4. **Chấm điểm:** Chấm điểm thang 10, hiển thị điểm số và phân loại màu từng dòng:
+2. **Đọc phiếu:** OpenCV tự động tìm 4 góc, căn phẳng phiếu thi và nhận diện 50 câu. Bảng kết quả hiển thị 50 câu kèm trạng thái "Đã chọn", "Bỏ trống", hoặc "Nhiều đáp án". Khi chưa có đáp án chuẩn, nhãn "Đúng / Sai" hiển thị trạng thái `--` (không đoán mò).
+3. **Quản lý đáp án chuẩn:**
+   - **Nạp JSON:** Chọn tệp JSON đáp án chuẩn có sẵn (ví dụ: `answer_key/answer_key.json`).
+   - **Nhập thủ công:** Mở cửa sổ "NHẬP ĐÁP ÁN CHUẨN – 50 CÂU" chia 2 cột × 25 câu, hỗ trợ chọn combobox hoặc gõ phím nhanh A/B/C/D, các tiện ích điền nhanh/xóa hết, điền sẵn đáp án đang dùng để chỉnh sửa từng câu, kiểm tra hợp lệ đủ 50 câu với 2 nút **"Lưu & sử dụng"** và **"Hủy"**.
+   - **Xuất JSON:** Nút duy nhất trên thanh công cụ giao diện chính cho phép lưu bộ đáp án chuẩn hiện đang sử dụng ra tệp `.json` chuẩn (cấu trúc `{"answers": [...]}` tương thích `load_answer_key`).
+4. **Chấm điểm:** Chấm điểm thang 10, hiển thị điểm số nổi bật và phân loại màu từng dòng:
    - 🟩 **Xanh lá:** Đúng đáp án.
    - 🟥 **Đỏ:** Sai đáp án.
    - 🟨 **Vàng:** Bỏ trống không tô (`BLANK`).
    - 🟧 **Cam:** Tô nhiều hơn một đáp án (`MULTIPLE`).
 5. **Xuất Excel:** Xuất báo cáo bảng điểm ra file `.xlsx` (hỗ trợ cả **Chế độ 1**: chỉ xuất kết quả nhận diện khi chưa chấm, và **Chế độ 2**: bảng điểm chi tiết kèm màu sắc đồng bộ).
+*(Lưu ý: Khi đổi bộ đáp án chuẩn sau khi đã chấm, chương trình tự động xóa kết quả điểm cũ, chuyển bảng về trạng thái chưa chấm và yêu cầu bấm "Chấm điểm" lại để tránh hiển thị điểm sai).*
 
 ---
 
