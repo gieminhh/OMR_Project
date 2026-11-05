@@ -188,7 +188,19 @@ OMR_Project/
 
 ---
 
-## 4. Giới hạn & Lưu ý vận hành
+## 4. Tính năng nâng cao (Chấm hàng loạt & Quản lý đợt thi)
+
+Ngoài giao diện và API xử lý phiếu 50 câu đơn lẻ cốt lõi, project còn tích hợp các module mở rộng hỗ trợ quản lý đợt thi và chấm hàng loạt:
+- Quản lý đợt thi, lớp học và học sinh bảo toàn số 0 ở đầu SBD (`modules/session_manager.py`).
+- Động cơ xử lý hàng loạt đa luồng (`modules/batch_processor.py`).
+- Cơ sở dữ liệu SQLite cục bộ (`modules/db.py`).
+- Nạp dữ liệu mẫu và benchmark (`modules/demo_loader.py`, `scripts/load_demo_data.py`).
+
+Xem tài liệu hướng dẫn chi tiết dành cho các tính năng nâng cao này tại file: [`HUONG_DAN_SU_DUNG.md`](HUONG_DAN_SU_DUNG.md).
+
+---
+
+## 5. Giới hạn & Lưu ý vận hành
 
 Để hệ thống đạt độ chính xác cao nhất, cần lưu ý các điều kiện sau:
 

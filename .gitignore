@@ -9,6 +9,13 @@ config/app_state.json
 config/last_answer_key.json
 config/answer_key.json
 
+# Local exam databases and reproducible benchmark output
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+test_images/benchmark_dataset/
+
 # Local credentials and editor state
 .env
 .env.*
