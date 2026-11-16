@@ -1,20 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import sys
 from pathlib import Path
 
@@ -25,8 +8,8 @@ if str(ROOT) not in sys.path:
 
 from modules.answer_detection import analyze_answers, load_layout
 from modules.errors import OMRError
-from modules.image_processing import load_image, resize_image, save_image
-from modules.paper_detection import detect_and_warp_paper
+from modules.background_removal import remove_background
+from modules.image_processing import load_image, save_image
 from modules.printed_form import detect_printed_layout
 
 DEFAULT_LAYOUT_PATH = ROOT / "config" / "layout.json"
@@ -36,7 +19,6 @@ def run_demo_detect_answers(
     image_path: str | Path | None = None,
     output_dir: str | Path | None = None,
 ) -> dict:
-
     if image_path is None:
         image_path = ROOT / "test_images" / "sample_photo.png"
     image_path = Path(image_path)
@@ -57,7 +39,7 @@ def run_demo_detect_answers(
         warped = raw_image
     else:
         print("[1/5] Căn phẳng phiếu (Warp) về kích thước chuẩn 1000x1400...")
-        warped = detect_and_warp_paper(resize_image(raw_image))
+        warped = remove_background(raw_image)
 
 
     print("[2/5] Xác định cấu hình layout (Mốc in thật hoặc Layout chuẩn)...")

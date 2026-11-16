@@ -1,11 +1,3 @@
-
-
-
-
-
-
-
-
 import json
 import sys
 import tkinter as tk
@@ -24,14 +16,13 @@ from main import process_omr
 from modules.export_excel import export_excel
 from modules.image_processing import load_image
 from modules.scoring import load_answer_key, score_answers
-from modules.validation import validate_answer_key, validate_answers
+from modules.validation import VALID_KEY_VALUES, validate_answer_key, validate_answers
 
 try:
     from PIL import Image, ImageTk
     _HAS_PIL = True
 except ImportError:
     _HAS_PIL = False
-
 
 
 COLOR_APP_BG        = "#F1F5F9"
@@ -63,10 +54,16 @@ ROW_MULTI_FG        = "#7C2D12"
 ROW_NORMAL_BG       = "#FFFFFF"
 ROW_NORMAL_FG       = "#1E293B"
 
+ROW_LABELS = {
+    "correct": "✓ Đúng",
+    "wrong": "✗ Sai",
+    "blank": "— Bỏ trống",
+    "multiple": "⚠ Nhiều đáp án",
+}
+UNSCORED_ROW_TAGS = {"BLANK": "blank", "MULTIPLE": "multiple"}
+
 
 class ManualAnswerKeyDialog(tk.Toplevel):
-
-
     def __init__(
         self,
         parent,
@@ -93,7 +90,6 @@ class ManualAnswerKeyDialog(tk.Toplevel):
         self._create_widgets(initial_answers)
 
     def _create_widgets(self, initial_answers: list[str] | None):
-
         header_frame = tk.Frame(self, bg=COLOR_CARD_BG, bd=1, relief="solid")
         header_frame.pack(side="top", fill="x", padx=12, pady=(10, 6))
 
@@ -202,7 +198,7 @@ class ManualAnswerKeyDialog(tk.Toplevel):
             init_val = ""
             if initial_answers and i - 1 < len(initial_answers):
                 val = str(initial_answers[i - 1]).strip().upper()
-                if val in ("A", "B", "C", "D"):
+                if val in VALID_KEY_VALUES:
                     init_val = val
 
             var = tk.StringVar(value=init_val)
@@ -261,50 +257,41 @@ class ManualAnswerKeyDialog(tk.Toplevel):
         btn_cancel.pack(side="right", padx=4)
 
     def _on_key_press(self, event, var: tk.StringVar):
-
         char = (event.char or "").upper()
-        if char in ("A", "B", "C", "D"):
+        if char in VALID_KEY_VALUES:
             var.set(char)
             self._on_change()
             return "break"
         return None
 
     def _on_change(self):
-
-        answers = [v.get().strip().upper() for v in self.vars]
-        valid_cnt = sum(1 for a in answers if a in ("A", "B", "C", "D"))
-        if hasattr(self, "lbl_counter"):
-            self.lbl_counter.configure(
-                text=f"Đã chọn: {valid_cnt}/50 câu",
-                fg="#16A34A" if valid_cnt == 50 else COLOR_PRIMARY,
-            )
+        valid_count = sum(answer in VALID_KEY_VALUES for answer in self.get_answers())
+        self.lbl_counter.configure(
+            text=f"Đã chọn: {valid_count}/50 câu",
+            fg="#16A34A" if valid_count == 50 else COLOR_PRIMARY,
+        )
 
     def get_answers(self) -> list[str]:
-
         return [v.get().strip().upper() for v in self.vars]
 
     def set_answer(self, index: int, value: str):
-
         if 0 <= index < len(self.vars):
             self.vars[index].set(value.strip().upper())
             self._on_change()
 
     def fill_all(self, value: str):
-
         val = value.strip().upper()
-        if val in ("A", "B", "C", "D"):
+        if val in VALID_KEY_VALUES:
             for v in self.vars:
                 v.set(val)
             self._on_change()
 
     def clear_all(self):
-
-        for v in self.vars:
-            v.set("")
+        for var in self.vars:
+            var.set("")
         self._on_change()
 
     def on_save(self):
-
         answers = self.get_answers()
         v_res = validate_answer_key(answers)
         if not v_res["valid"]:
@@ -320,13 +307,11 @@ class ManualAnswerKeyDialog(tk.Toplevel):
             return
 
         if self.on_save_callback:
-            self.on_save_callback(list(answers))
+            self.on_save_callback(answers)
         self.destroy()
 
 
 class SimpleOMRApp(tk.Tk):
-
-
     def __init__(self):
         super().__init__()
         self.title("PHẦN MỀM ĐỌC PHIẾU TRẮC NGHIỆM OMR 50 CÂU")
@@ -350,7 +335,6 @@ class SimpleOMRApp(tk.Tk):
         self._set_status("Sẵn sàng. Hãy chọn ảnh phiếu để bắt đầu.")
 
     def _setup_styles(self):
-
         self.style = ttk.Style(self)
         if "clam" in self.style.theme_names():
             self.style.theme_use("clam")
@@ -391,10 +375,6 @@ class SimpleOMRApp(tk.Tk):
         self.style.map("Treeview.Heading", background=[("active", "#E2E8F0")])
 
     def _create_widgets(self):
-
-
-
-
         toolbar_frame = tk.Frame(self, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightthickness=0)
         toolbar_frame.pack(side="top", fill="x", padx=12, pady=(10, 6))
 
@@ -404,38 +384,38 @@ class SimpleOMRApp(tk.Tk):
         self.btn_open = ttk.Button(
             inner_tb, text="📂 Chọn ảnh", command=self.on_open_image, style="Action.TButton"
         )
-        self.btn_open.pack(side="left", padx=2)
 
         self.btn_scan = ttk.Button(
             inner_tb, text="🔍 Đọc phiếu", command=self.on_scan_sheet, style="Action.TButton", state="disabled"
         )
-        self.btn_scan.pack(side="left", padx=2)
 
         self.btn_key = ttk.Button(
             inner_tb, text="📋 Nạp JSON", command=self.on_load_key, style="Action.TButton"
         )
-        self.btn_key.pack(side="left", padx=2)
 
         self.btn_manual_key = ttk.Button(
             inner_tb, text="✏️ Nhập thủ công", command=self.on_manual_key, style="Action.TButton"
         )
-        self.btn_manual_key.pack(side="left", padx=2)
 
         self.btn_export_key = ttk.Button(
             inner_tb, text="💾 Xuất JSON", command=self.on_export_key_json, style="Action.TButton"
         )
-        self.btn_export_key.pack(side="left", padx=2)
 
         self.btn_score = ttk.Button(
             inner_tb, text="⭐ Chấm điểm", command=self.on_score, style="Action.TButton", state="disabled"
         )
-        self.btn_score.pack(side="left", padx=2)
 
         self.btn_excel = ttk.Button(
             inner_tb, text="📊 Xuất Excel", command=self.on_export_excel, style="Action.TButton", state="disabled"
         )
-        self.btn_excel.pack(side="left", padx=2)
 
+
+        buttons = (
+            self.btn_open, self.btn_scan, self.btn_key, self.btn_manual_key,
+            self.btn_export_key, self.btn_score, self.btn_excel,
+        )
+        for button in buttons:
+            button.pack(side="left", padx=2)
 
         self.lbl_key_status = tk.Label(
             inner_tb,
@@ -449,8 +429,6 @@ class SimpleOMRApp(tk.Tk):
             relief="solid",
         )
         self.lbl_key_status.pack(side="right", padx=4)
-
-
 
 
         content_box = tk.Frame(self, bg=COLOR_APP_BG)
@@ -558,30 +536,29 @@ class SimpleOMRApp(tk.Tk):
         cols = ("question", "student", "correct", "result")
         self.tree = ttk.Treeview(table_box, columns=cols, show="headings", selectmode="browse")
 
-        self.tree.heading("question", text="Câu", anchor="center")
-        self.tree.heading("student",  text="Học sinh", anchor="center")
-        self.tree.heading("correct",  text="Đáp án đúng", anchor="center")
-        self.tree.heading("result",   text="Đánh giá", anchor="w")
+        for column, title, width, min_width, anchor in (
+            ("question", "Câu", 55, 45, "center"),
+            ("student", "Học sinh", 85, 75, "center"),
+            ("correct", "Đáp án đúng", 95, 85, "center"),
+            ("result", "Đánh giá", 170, 140, "w"),
+        ):
+            self.tree.heading(column, text=title, anchor=anchor)
+            self.tree.column(column, width=width, minwidth=min_width, anchor=anchor)
 
-        self.tree.column("question", width=55,  minwidth=45, anchor="center")
-        self.tree.column("student",  width=85,  minwidth=75, anchor="center")
-        self.tree.column("correct",  width=95,  minwidth=85, anchor="center")
-        self.tree.column("result",   width=170, minwidth=140, anchor="w")
-
-
-        self.tree.tag_configure("correct",  background=ROW_CORRECT_BG, foreground=ROW_CORRECT_FG)
-        self.tree.tag_configure("wrong",    background=ROW_WRONG_BG,   foreground=ROW_WRONG_FG)
-        self.tree.tag_configure("blank",    background=ROW_BLANK_BG,   foreground=ROW_BLANK_FG)
-        self.tree.tag_configure("multiple", background=ROW_MULTI_BG,   foreground=ROW_MULTI_FG)
-        self.tree.tag_configure("normal",   background=ROW_NORMAL_BG,  foreground=ROW_NORMAL_FG)
+        for tag, background, foreground in (
+            ("correct", ROW_CORRECT_BG, ROW_CORRECT_FG),
+            ("wrong", ROW_WRONG_BG, ROW_WRONG_FG),
+            ("blank", ROW_BLANK_BG, ROW_BLANK_FG),
+            ("multiple", ROW_MULTI_BG, ROW_MULTI_FG),
+            ("normal", ROW_NORMAL_BG, ROW_NORMAL_FG),
+        ):
+            self.tree.tag_configure(tag, background=background, foreground=foreground)
 
         scroll_y = ttk.Scrollbar(table_box, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scroll_y.set)
 
         self.tree.pack(side="left", fill="both", expand=True)
         scroll_y.pack(side="right", fill="y")
-
-
 
 
         status_bar_frame = tk.Frame(self, bg=COLOR_CARD_BG, height=28, bd=1, relief="solid")
@@ -599,7 +576,6 @@ class SimpleOMRApp(tk.Tk):
         self.lbl_status.pack(fill="x", pady=4)
 
     def _make_pastel_chip(self, parent, title: str, initial_val: str, bg_color: str, fg_color: str, col: int) -> tk.Label:
-
         parent.columnconfigure(col, weight=1)
         chip = tk.Frame(parent, bg=bg_color, bd=1, relief="solid")
         chip.grid(row=0, column=col, padx=3, sticky="ew")
@@ -612,14 +588,12 @@ class SimpleOMRApp(tk.Tk):
         return val_label
 
     def _set_status(self, text: str, is_error: bool = False):
-
         self.lbl_status.configure(
             text=text,
             fg="#DC2626" if is_error else COLOR_TEXT_MAIN,
         )
 
     def _draw_placeholder(self):
-
         self.canvas.delete("all")
         w = max(self.canvas.winfo_width(), 400)
         h = max(self.canvas.winfo_height(), 400)
@@ -647,11 +621,7 @@ class SimpleOMRApp(tk.Tk):
         )
 
 
-
-
-
     def on_open_image(self):
-
         path = filedialog.askopenfilename(
             title="Chọn ảnh phiếu trắc nghiệm OMR",
             filetypes=[("Tệp ảnh", "*.png;*.jpg;*.jpeg;*.bmp"), ("Tất cả", "*.*")],
@@ -661,10 +631,13 @@ class SimpleOMRApp(tk.Tk):
 
         try:
 
-            self.image_path = Path(path)
-            self.loaded_image = load_image(self.image_path)
-            self.display_image = self.loaded_image.copy()
-            self._render_image(self.display_image)
+            image_path = Path(path)
+            image = load_image(image_path)
+            preview = image.copy()
+            self._render_image(preview)
+            self.image_path = image_path
+            self.loaded_image = image
+            self.display_image = preview
 
 
             h, w = self.loaded_image.shape[:2]
@@ -677,7 +650,7 @@ class SimpleOMRApp(tk.Tk):
 
 
             self.lbl_score.configure(text="-- / 10", fg=COLOR_PRIMARY)
-            self._update_stat_chips(0, 0, 0, 0, is_reset=True)
+            self._update_stat_chips()
             self.lbl_stats.configure(text=f"Đã mở: {self.image_path.name}. Hãy nhấn 'Đọc phiếu'.")
 
 
@@ -691,7 +664,6 @@ class SimpleOMRApp(tk.Tk):
             self._set_status(f"Lỗi đọc ảnh: {exc}", is_error=True)
 
     def on_scan_sheet(self):
-
         if self.image_path is None:
             return
 
@@ -701,59 +673,33 @@ class SimpleOMRApp(tk.Tk):
         try:
 
             result = process_omr(self.image_path, debug=False)
-            self.student_answers = result.get("answers")
+            answers = result["answers"]
+            validation = validate_answers(answers)
+            if not validation["valid"]:
+                messagebox.showwarning("Cảnh báo dữ liệu", "; ".join(validation["errors"]), parent=self)
+
             annotated = result.get("annotated_image")
-
             if annotated is not None:
+                self._render_image(annotated)
                 self.display_image = annotated
-                self._render_image(self.display_image)
-
-
-            v_res = validate_answers(self.student_answers)
-            if not v_res["valid"]:
-                messagebox.showwarning("Cảnh báo dữ liệu", "; ".join(v_res["errors"]), parent=self)
-
-
-            self._update_table_unscored()
-
-
+            self.student_answers = answers
+            self._show_unscored(validation)
             self.btn_excel.configure(state="normal")
 
-
+            blank, multi = validation["blank_count"], validation["multiple_count"]
+            stats = f"Đã nhận diện đủ 50 câu (Bỏ trống: {blank}, Tô nhiều: {multi})"
             if self.answer_key:
-                self.btn_score.configure(state="normal")
-                self.lbl_score.configure(text="Chưa chấm", fg=COLOR_TEXT_MUTED)
-                self.lbl_stats.configure(
-                    text=f"Đã nhận diện đủ 50 câu (Bỏ trống: {v_res['blank_count']}, Tô nhiều: {v_res['multiple_count']}). Đã có đáp án chuẩn, hãy bấm 'Chấm điểm'."
-                )
-                self._update_stat_chips(
-                    "--",
-                    "--",
-                    v_res["blank_count"],
-                    v_res["multiple_count"],
-                )
-                self._set_status("Đọc phiếu thành công. Hãy nhấn 'Chấm điểm' để tính điểm theo đáp án chuẩn.")
+                stats += ". Đã có đáp án chuẩn, hãy bấm 'Chấm điểm'."
+                status = "Đọc phiếu thành công. Hãy nhấn 'Chấm điểm' để tính điểm theo đáp án chuẩn."
             else:
-                self.btn_score.configure(state="disabled")
-                self.lbl_score.configure(text="Chưa chấm", fg=COLOR_TEXT_MUTED)
-                self.lbl_stats.configure(
-                    text=f"Đã nhận diện đủ 50 câu (Bỏ trống: {v_res['blank_count']}, Tô nhiều: {v_res['multiple_count']})"
-                )
-
-                self._update_stat_chips(
-                    "--",
-                    "--",
-                    v_res["blank_count"],
-                    v_res["multiple_count"],
-                )
-                self._set_status("Đọc phiếu thành công (50 câu). Có thể nạp/nhập đáp án chuẩn để chấm điểm hoặc xuất Excel ngay.")
-
+                status = "Đọc phiếu thành công (50 câu). Có thể nạp/nhập đáp án chuẩn để chấm điểm hoặc xuất Excel ngay."
+            self.lbl_stats.configure(text=stats)
+            self._set_status(status)
         except Exception as exc:
             messagebox.showerror("Lỗi nhận diện phiếu", str(exc), parent=self)
             self._set_status(f"Lỗi nhận diện phiếu: {exc}", is_error=True)
 
     def on_load_key(self):
-
         path = filedialog.askopenfilename(
             title="Chọn file đáp án chuẩn (JSON)",
             filetypes=[("Tệp JSON", "*.json"), ("Tất cả", "*.*")],
@@ -769,16 +715,13 @@ class SimpleOMRApp(tk.Tk):
             self._set_status(f"Lỗi nạp đáp án chuẩn: {exc}", is_error=True)
 
     def on_manual_key(self):
-
-        dlg = ManualAnswerKeyDialog(
+        return ManualAnswerKeyDialog(
             parent=self,
             initial_answers=self.answer_key,
             on_save=lambda answers: self._apply_new_answer_key(answers, "Thủ công (50 câu)"),
         )
-        return dlg
 
     def on_export_key_json(self):
-
         if not self.answer_key:
             messagebox.showwarning(
                 "Chưa có đáp án chuẩn",
@@ -787,10 +730,7 @@ class SimpleOMRApp(tk.Tk):
                 parent=self,
             )
             return
-        self._export_key_to_json_file(self.answer_key, parent_widget=self)
-
-    def _export_key_to_json_file(self, answers: list[str], parent_widget=None) -> Path | None:
-
+        answers = self.answer_key
         v_res = validate_answer_key(answers)
         if not v_res["valid"]:
             missing = v_res["missing_indices"]
@@ -798,9 +738,9 @@ class SimpleOMRApp(tk.Tk):
             messagebox.showwarning(
                 "Chưa đủ 50 câu",
                 f"Cần đủ 50 đáp án hợp lệ (A, B, C, D) trước khi xuất file JSON!\nCòn thiếu {len(missing)} câu: {missing_str}",
-                parent=parent_widget or self,
+                parent=self,
             )
-            return None
+            return
 
         save_path = filedialog.asksaveasfilename(
             title="Lưu file đáp án chuẩn JSON",
@@ -808,10 +748,10 @@ class SimpleOMRApp(tk.Tk):
             defaultextension=".json",
             filetypes=[("Tệp JSON", "*.json"), ("Tất cả", "*.*")],
             confirmoverwrite=True,
-            parent=parent_widget or self,
+            parent=self,
         )
         if not save_path:
-            return None
+            return
 
         try:
             path = Path(save_path)
@@ -821,16 +761,13 @@ class SimpleOMRApp(tk.Tk):
             messagebox.showinfo(
                 "Thành công",
                 f"Đã lưu đáp án chuẩn ra file JSON thành công:\n{path}",
-                parent=parent_widget or self,
+                parent=self,
             )
-            return path
         except Exception as exc:
-            messagebox.showerror("Lỗi lưu JSON", f"Không ghi được file JSON: {exc}", parent=parent_widget or self)
+            messagebox.showerror("Lỗi lưu JSON", f"Không ghi được file JSON: {exc}", parent=self)
             self._set_status(f"Lỗi xuất JSON: {exc}", is_error=True)
-            return None
 
     def _apply_new_answer_key(self, key: list[str], source_name: str):
-
         self.answer_key = list(key)
         self.lbl_key_status.configure(
             text=f"✓ Đáp án: {source_name}",
@@ -839,30 +776,25 @@ class SimpleOMRApp(tk.Tk):
         )
 
 
+        validation = None
+        if self.student_answers is not None:
+            validation = validate_answers(self.student_answers)
+        self._show_unscored(validation)
+        if validation is None:
+            self._set_status(f"Đã nạp đáp án chuẩn: {source_name}.")
+        else:
+            self.lbl_stats.configure(text=f"Đã cập nhật đáp án chuẩn ({source_name}). Hãy nhấn 'Chấm điểm' lại.")
+            self._set_status(f"Đã cập nhật đáp án ({source_name}). Hãy bấm 'Chấm điểm' để tính lại.")
+
+    def _show_unscored(self, validation: dict | None):
         self.score_result = None
         self.lbl_score.configure(text="Chưa chấm", fg=COLOR_TEXT_MUTED)
-
-
-        if self.student_answers is not None:
+        self.btn_score.configure(state="normal" if validation is not None and self.answer_key else "disabled")
+        if validation is not None:
             self._update_table_unscored()
-            v_res = validate_answers(self.student_answers)
-            self._update_stat_chips(
-                "--",
-                "--",
-                v_res["blank_count"],
-                v_res["multiple_count"],
-            )
-            self.lbl_stats.configure(
-                text=f"Đã cập nhật đáp án chuẩn ({source_name}). Hãy nhấn 'Chấm điểm' lại."
-            )
-            self.btn_score.configure(state="normal")
-            self._set_status(f"Đã cập nhật đáp án ({source_name}). Hãy bấm 'Chấm điểm' để tính lại.")
-        else:
-            self.btn_score.configure(state="disabled")
-            self._set_status(f"Đã nạp đáp án chuẩn: {source_name}.")
+            self._update_stat_chips(blank=validation["blank_count"], multi=validation["multiple_count"])
 
     def on_score(self):
-
         if not self.student_answers or not self.answer_key:
             messagebox.showinfo("Thông báo", "Cần đọc phiếu và nạp đáp án chuẩn trước khi chấm điểm.", parent=self)
             return
@@ -895,7 +827,6 @@ class SimpleOMRApp(tk.Tk):
             self._set_status(f"Lỗi chấm điểm: {exc}", is_error=True)
 
     def on_export_excel(self):
-
         if not self.student_answers:
             messagebox.showwarning("Cảnh báo", "Chưa có kết quả để xuất. Hãy đọc phiếu trước.", parent=self)
             return
@@ -915,14 +846,10 @@ class SimpleOMRApp(tk.Tk):
 
         try:
 
-            if self.score_result is not None:
-
-                out = export_excel(self.score_result, save_path)
-                mode_name = "kết quả chấm điểm đầy đủ"
-            else:
-
-                out = export_excel(None, save_path, answers=self.student_answers)
-                mode_name = "kết quả nhận diện (chưa chấm)"
+            out = export_excel(self.score_result, save_path, answers=self.student_answers)
+            mode_name = (
+                "kết quả chấm điểm đầy đủ" if self.score_result is not None else "kết quả nhận diện (chưa chấm)"
+            )
 
             self._set_status(f"Xuất Excel thành công: {Path(out).name}")
             messagebox.showinfo("Thành công", f"Đã xuất {mode_name} ra file:\n{out}", parent=self)
@@ -931,75 +858,42 @@ class SimpleOMRApp(tk.Tk):
             self._set_status(f"Lỗi xuất Excel: {exc}", is_error=True)
 
 
-
-
-
     def _update_table_unscored(self):
-
         self._clear_table()
         if not self.student_answers:
             return
 
         for i, ans in enumerate(self.student_answers, start=1):
-            if ans == "BLANK":
-                status, tag = "— Bỏ trống", "blank"
-            elif ans == "MULTIPLE":
-                status, tag = "⚠ Nhiều đáp án", "multiple"
-            else:
-                status, tag = "Đã chọn", "normal"
-
-
+            tag = UNSCORED_ROW_TAGS.get(ans, "normal")
+            status = ROW_LABELS.get(tag, "Đã chọn")
             self.tree.insert("", "end", values=(i, ans, "--", status), tags=(tag,))
 
     def _update_table_scored(self):
-
         self._clear_table()
         if not self.score_result:
             return
 
-        result_map = {
-            "correct":  ("✓ Đúng",        "correct"),
-            "wrong":    ("✗ Sai",         "wrong"),
-            "blank":    ("— Bỏ trống",     "blank"),
-            "multiple": ("⚠ Nhiều đáp án", "multiple"),
-        }
-
         for item in self.score_result["details"]:
-            q = item["question"]
-            stu = item["student"]
-            cor = item["correct"]
-            res_text, tag = result_map.get(item["result"], (item["result"], "normal"))
+            result = item["result"]
+            values = (item["question"], item["student"], item["correct"], ROW_LABELS.get(result, result))
+            tag = result if result in ROW_LABELS else "normal"
+            self.tree.insert("", "end", values=values, tags=(tag,))
 
-
-            self.tree.insert("", "end", values=(q, stu, cor, res_text), tags=(tag,))
-
-    def _update_stat_chips(self, correct, wrong, blank, multi, is_reset: bool = False):
-
-        if is_reset:
-            self.chip_correct.configure(text="--")
-            self.chip_wrong.configure(text="--")
-            self.chip_blank.configure(text="--")
-            self.chip_multi.configure(text="--")
-        else:
-            self.chip_correct.configure(text="--" if correct is None or correct == "--" else str(correct))
-            self.chip_wrong.configure(text="--" if wrong is None or wrong == "--" else str(wrong))
-            self.chip_blank.configure(text="--" if blank is None or blank == "--" else str(blank))
-            self.chip_multi.configure(text="--" if multi is None or multi == "--" else str(multi))
+    def _update_stat_chips(self, correct=None, wrong=None, blank=None, multi=None):
+        chips = (self.chip_correct, self.chip_wrong, self.chip_blank, self.chip_multi)
+        for chip, value in zip(chips, (correct, wrong, blank, multi)):
+            chip.configure(text="--" if value is None else str(value))
 
     def _clear_table(self):
-
-        for item in self.tree.get_children():
-            self.tree.delete(item)
+        self.tree.delete(*self.tree.get_children())
 
     def _on_canvas_resize(self, event):
-
         if self.display_image is not None:
             self._render_image(self.display_image)
         else:
             self._draw_placeholder()
 
     def _render_image(self, bgr_img: np.ndarray):
-
         if not _HAS_PIL:
             self.canvas.delete("all")
             self.canvas.create_text(
@@ -1024,7 +918,6 @@ class SimpleOMRApp(tk.Tk):
 
 
 def launch_simple_app():
-
     app = SimpleOMRApp()
     app.mainloop()
 

@@ -265,6 +265,38 @@ class SimpleGuiTests(unittest.TestCase):
         self.assertEqual(self.app.score_result["blank_count"], res_direct["blank_count"])
         self.assertEqual(self.app.score_result["multiple_count"], res_direct["multiple_count"])
 
+    def test_rescanning_invalidates_old_score(self):
+        self.app.image_path = ROOT / "test_images" / "sample_photo.png"
+        self.app.student_answers = self.app.answer_key = ["A"] * 50
+        self.app.on_score()
+        self.assertEqual(self.app.score_result["score"], 10.0)
+
+        self.app.on_scan_sheet()
+
+        self.assertIsNone(self.app.score_result)
+        self.assertEqual(self.app.lbl_score.cget("text"), "Chưa chấm")
+        self.assertEqual(str(self.app.btn_score["state"]), "normal")
+        self.assertEqual(len(self.app.tree.get_children()), 50)
+
+    def test_failed_image_selection_preserves_previous_sheet(self):
+        path = ROOT / "test_images" / "sample_photo.png"
+        with patch("tkinter.filedialog.askopenfilename", return_value=str(path)):
+            self.app.on_open_image()
+        self.app.student_answers = self.app.answer_key = ["A"] * 50
+        self.app.on_score()
+        score = self.app.score_result
+        self.assertEqual(self.app.image_path, path)
+        self.assertIsNotNone(score)
+
+        with patch("tkinter.filedialog.askopenfilename", return_value=str(path.with_name("missing.png"))):
+            with patch("tkinter.messagebox.showerror") as error:
+                self.app.on_open_image()
+                error.assert_called_once()
+
+        self.assertEqual(self.app.image_path, path)
+        self.assertIs(self.app.score_result, score)
+        self.assertEqual(str(self.app.btn_scan["state"]), "normal")
+
     def test_changing_answer_key_invalidates_old_score(self):
 
         self.app.student_answers = ["A"] * 50

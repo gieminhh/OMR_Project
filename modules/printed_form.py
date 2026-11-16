@@ -1,9 +1,3 @@
-
-
-
-
-
-
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -19,11 +13,6 @@ PROFILE_PATH = Path(__file__).resolve().parents[1] / "config" / "printed_50.json
 
 
 def detect_printed_layout(image: np.ndarray) -> AnswerConfig | None:
-
-
-
-
-
     try:
         profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -39,9 +28,10 @@ def detect_printed_layout(image: np.ndarray) -> AnswerConfig | None:
     low, high = np.asarray(profile["marker_size_range"]) * scale
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
-        if low <= w <= high and low <= h <= high and 0.8 <= w / h <= 1.25:
-            if cv2.contourArea(contour) / (w * h) >= profile["marker_min_extent"]:
-                markers.append((x + w / 2, y + h / 2))
+        if not (low <= w <= high and low <= h <= high and 0.8 <= w / h <= 1.25):
+            continue
+        if cv2.contourArea(contour) / (w * h) >= profile["marker_min_extent"]:
+            markers.append((x + w / 2, y + h / 2))
     bands = profile["middle_marker_x_bands"]
     ymin, ymax = np.array(profile["marker_y_band"]) * height
     groups = []
@@ -71,21 +61,24 @@ def detect_printed_layout(image: np.ndarray) -> AnswerConfig | None:
         raise AnswerDetectionError("Bề rộng hai cột đáp án không phù hợp mẫu phiếu in.")
     centers = []
     for column, group in enumerate(groups):
+        start = 1 if column == 0 else 0
         for row in range(25):
             block, offset = divmod(row, 5)
             fraction = (offset + .5) / 5
             anchor = group[block] * (1 - fraction) + group[block + 1] * fraction
+            y = round(anchor[1])
             row_centers = []
             for position in profile["choice_fractions"]:
-                x = round(anchor[0] + (position - (1 if column == 0 else 0)) * spans[column])
-                row_centers.append((x, round(anchor[1])))
+                x = round(anchor[0] + (position - start) * spans[column])
+                row_centers.append((x, y))
             centers.append(tuple(row_centers))
     radius = round(profile["bubble_radius"] * scale)
     search = round(profile["center_search_radius"] * scale)
     points = np.asarray(centers)
+    flat_points = points.reshape(-1, 2)
     padding = radius * 2 + search + 2
-    min_x, min_y = points.reshape(-1, 2).min(axis=0) - padding
-    max_x, max_y = points.reshape(-1, 2).max(axis=0) + padding + 1
+    min_x, min_y = flat_points.min(axis=0) - padding
+    max_x, max_y = flat_points.max(axis=0) + padding + 1
     region = (max(0, int(min_x)), max(0, int(min_y)), min(width, int(max_x)), min(height, int(max_y)))
     columns = []
     for block in (points[:25], points[25:]):

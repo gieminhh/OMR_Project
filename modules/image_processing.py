@@ -1,5 +1,3 @@
-
-
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,8 +14,6 @@ DEFAULT_THRESHOLD_C = 12.0
 
 @dataclass(frozen=True)
 class PreprocessConfig:
-
-
     max_dimension: int = DEFAULT_MAX_DIMENSION
     blur_kernel: int = DEFAULT_BLUR_KERNEL
     threshold_method: str = "adaptive"
@@ -28,8 +24,6 @@ class PreprocessConfig:
 
 @dataclass
 class PreprocessedImage:
-
-
     original: np.ndarray
     resized: np.ndarray
     gray: np.ndarray
@@ -38,7 +32,6 @@ class PreprocessedImage:
 
 
 def validate_image(image: np.ndarray) -> None:
-
     if not isinstance(image, np.ndarray) or image.size == 0:
         raise ImageProcessingError("Ảnh rỗng hoặc dữ liệu không phải numpy array.")
     if image.dtype != np.uint8 or image.ndim not in (2, 3):
@@ -50,7 +43,6 @@ def validate_image(image: np.ndarray) -> None:
 
 
 def load_image(path: str | Path) -> np.ndarray:
-
     path = Path(path)
     if not path.is_file():
         raise ImageProcessingError(f"Ảnh không tồn tại hoặc không phải tệp: {path}")
@@ -66,7 +58,6 @@ def load_image(path: str | Path) -> np.ndarray:
 
 
 def save_image(path: str | Path, image: np.ndarray) -> Path:
-
     validate_image(image)
     path = Path(path)
     try:
@@ -81,7 +72,6 @@ def save_image(path: str | Path, image: np.ndarray) -> Path:
 
 
 def resize_image(image: np.ndarray, max_dimension: int = DEFAULT_MAX_DIMENSION) -> np.ndarray:
-
     validate_image(image)
     if not isinstance(max_dimension, int) or max_dimension < 3:
         raise ImageProcessingError("max_dimension phải là số nguyên >= 3.")
@@ -94,28 +84,16 @@ def resize_image(image: np.ndarray, max_dimension: int = DEFAULT_MAX_DIMENSION) 
     return cv2.resize(image, size, interpolation=cv2.INTER_AREA)
 
 
-def to_grayscale(image: np.ndarray) -> np.ndarray:
-
-
-
-
-
-
+def to_grayscale(image: np.ndarray, *, copy: bool = True) -> np.ndarray:
     validate_image(image)
     if image.ndim == 2:
-        return image.copy()
+        return image.copy() if copy else image
     conversion = cv2.COLOR_BGRA2GRAY if image.shape[2] == 4 else cv2.COLOR_BGR2GRAY
     return cv2.cvtColor(image, conversion)
 
 
 def apply_blur(gray: np.ndarray, kernel_size: int = DEFAULT_BLUR_KERNEL) -> np.ndarray:
-
-
-
-
-
-
-    gray = to_grayscale(gray)
+    gray = to_grayscale(gray, copy=False)
     if not isinstance(kernel_size, int) or kernel_size < 1 or kernel_size % 2 == 0:
         raise ImageProcessingError("Kích thước Gaussian kernel phải là số lẻ dương.")
     return cv2.GaussianBlur(gray, (kernel_size, kernel_size), 0)
@@ -127,14 +105,7 @@ def apply_threshold(
     block_size: int = DEFAULT_BLOCK_SIZE,
     c: float = DEFAULT_THRESHOLD_C,
 ) -> np.ndarray:
-
-
-
-
-
-
-
-    gray = to_grayscale(gray)
+    gray = to_grayscale(gray, copy=False)
     if method == "otsu":
         return cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
     if method != "adaptive":
@@ -151,15 +122,6 @@ def apply_threshold(
 def preprocess_image(
     image: np.ndarray, config: PreprocessConfig | None = None
 ) -> PreprocessedImage:
-
-
-
-
-
-
-
-
-
     config = config or PreprocessConfig()
     resized = resize_image(image, config.max_dimension)
     gray = to_grayscale(resized)

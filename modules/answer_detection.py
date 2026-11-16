@@ -1,9 +1,3 @@
-
-
-
-
-
-
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,8 +18,6 @@ COLOR_AMBIGUOUS = (0, 100, 240)
 
 @dataclass(frozen=True)
 class AnswerConfig:
-
-
     paper_size: tuple[int, int] = (1000, 1400)
     answer_region: tuple[int, int, int, int] = (120, 250, 930, 1330)
     columns: tuple[tuple[int, int, int, int], ...] = ((200, 300, 440, 1300), (630, 300, 870, 1300))
@@ -47,8 +39,6 @@ class AnswerConfig:
 
 @dataclass
 class AnswerDetectionResult:
-
-
     answers: list[str]
     fill_ratios: list[list[float]]
     ring_ratios: list[list[float]]
@@ -57,7 +47,6 @@ class AnswerDetectionResult:
 
 
 def validate_config(config: AnswerConfig) -> None:
-
     try:
         width, height = config.paper_size
         if any(type(n) is not int or n < 3 for n in (width, height)):
@@ -113,7 +102,6 @@ def validate_config(config: AnswerConfig) -> None:
 
 
 def load_layout(path: str | Path) -> AnswerConfig:
-
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -126,7 +114,6 @@ def load_layout(path: str | Path) -> AnswerConfig:
 
 
 def bubble_centers(config: AnswerConfig) -> list[list[tuple[int, int]]]:
-
     validate_config(config)
     if config.centers is not None:
         return [[(round(x), round(y)) for x, y in row] for row in config.centers]
@@ -142,19 +129,8 @@ def bubble_centers(config: AnswerConfig) -> list[list[tuple[int, int]]]:
 
 
 def classify_ratios(ratios: list[float], fill_threshold: float) -> str:
-
-
-
-
-
-
-
-    selected = []
-    for label, ratio in zip(CHOICES, ratios):
-        if ratio >= fill_threshold:
-            selected.append(label)
-
-    if len(selected) == 0:
+    selected = [label for label, ratio in zip(CHOICES, ratios) if ratio >= fill_threshold]
+    if not selected:
         return "BLANK"
     if len(selected) == 1:
         return selected[0]
@@ -164,26 +140,14 @@ def classify_ratios(ratios: list[float], fill_threshold: float) -> str:
 def analyze_answers(
     warped_image: np.ndarray, config: AnswerConfig | None = None, *, question_count: int = QUESTION_COUNT
 ) -> AnswerDetectionResult:
-
-
-
-
-
-
-
-
-
-
-
-
     config = config or AnswerConfig()
-    validate_config(config)
+    centers = bubble_centers(config)
     validate_image(warped_image)
     if tuple(warped_image.shape[:2][::-1]) != tuple(config.paper_size):
         raise AnswerDetectionError(f"Ảnh phải được warp về kích thước {config.paper_size} trước khi đọc.")
     if type(question_count) is not int or question_count not in (5, 10, QUESTION_COUNT):
         raise AnswerDetectionError("question_count chỉ nhận 5, 10 hoặc 50; mặc định là 50.")
-    gray = to_grayscale(warped_image)
+    gray = to_grayscale(warped_image, copy=False)
     blurred = apply_blur(gray)
     try:
         binary = apply_threshold(blurred, block_size=config.threshold_block_size, c=config.threshold_c)
@@ -207,28 +171,32 @@ def analyze_answers(
     ring_mask = (distance_squared >= (radius * config.ring_inner_ratio) ** 2) & (
         distance_squared <= (radius * config.ring_outer_ratio) ** 2
     )
+    sample_area = sample_mask.sum()
+    ring_area = ring_mask.sum()
     fill_ratios, ring_ratios, answers = [], [], []
-    centers = bubble_centers(config)[:question_count]
-    for question, row in enumerate(centers, start=1):
+    for question, row in enumerate(centers[:question_count], start=1):
         if config.center_search_radius:
             row = [_refine_center(center, ring_binary, ring_mask, outer_radius, config.center_search_radius) for center in row]
         fills, rings = [], []
         for x, y in row:
             cx, cy = x - x0, y - y0
-            patch = binary_region[cy - outer_radius:cy + outer_radius + 1, cx - outer_radius:cx + outer_radius + 1]
+            rows = slice(cy - outer_radius, cy + outer_radius + 1)
+            cols = slice(cx - outer_radius, cx + outer_radius + 1)
+            patch = binary_region[rows, cols]
             if patch.shape != sample_mask.shape:
                 raise AnswerDetectionError(f"Vùng bubble câu {question} bị cắt; kiểm tra answer_region.")
-            fills.append(float(np.count_nonzero(patch[sample_mask]) / sample_mask.sum()))
-            ring_patch = ring_region[cy - outer_radius:cy + outer_radius + 1, cx - outer_radius:cx + outer_radius + 1]
-            rings.append(float(np.count_nonzero(ring_patch[ring_mask]) / ring_mask.sum()))
+            fills.append(float(np.count_nonzero(patch[sample_mask]) / sample_area))
+            ring_patch = ring_region[rows, cols]
+            rings.append(float(np.count_nonzero(ring_patch[ring_mask]) / ring_area))
 
         answer = classify_ratios(fills, config.fill_threshold)
         answers.append(answer)
         fill_ratios.append(fills)
         ring_ratios.append(rings)
         for label, center, ratio in zip(CHOICES, row, fills):
-            marked = ratio >= config.fill_threshold
-            color = COLOR_AMBIGUOUS if answer == "MULTIPLE" and marked else COLOR_MARKED if marked else COLOR_EMPTY
+            color = COLOR_EMPTY
+            if ratio >= config.fill_threshold:
+                color = COLOR_AMBIGUOUS if answer == "MULTIPLE" else COLOR_MARKED
             cv2.circle(annotated, center, radius, color, 2)
             cv2.putText(annotated, f"{label}:{ratio:.2f}", (center[0] - radius, center[1] - radius - 3),
                         cv2.FONT_HERSHEY_SIMPLEX, DEBUG_FONT_SCALE, color, 1, cv2.LINE_AA)
@@ -247,9 +215,9 @@ def analyze_answers(
 def _refine_center(
     center: tuple[int, int], binary: np.ndarray, ring_mask: np.ndarray, radius: int, search: int
 ) -> tuple[int, int]:
-
     x, y = center
     best_score, best_center = -float("inf"), center
+    ring_area = ring_mask.sum()
     distance_penalty = 0.004
     for dy in range(-search, search + 1):
         for dx in range(-search, search + 1):
@@ -257,7 +225,7 @@ def _refine_center(
             patch = binary[cy - radius:cy + radius + 1, cx - radius:cx + radius + 1]
             if patch.shape != ring_mask.shape:
                 continue
-            ratio = np.count_nonzero(patch[ring_mask]) / ring_mask.sum()
+            ratio = np.count_nonzero(patch[ring_mask]) / ring_area
             score = ratio - distance_penalty * (dx * dx + dy * dy)
             if score > best_score:
                 best_score, best_center = score, (cx, cy)
@@ -267,5 +235,4 @@ def _refine_center(
 def detect_answers(
     warped_image: np.ndarray, config: AnswerConfig | None = None, *, question_count: int = QUESTION_COUNT
 ) -> list[str]:
-
     return analyze_answers(warped_image, config, question_count=question_count).answers

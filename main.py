@@ -1,6 +1,3 @@
-
-
-
 import argparse
 import json
 import sys
@@ -12,7 +9,7 @@ import numpy as np
 from modules.answer_detection import analyze_answers, load_layout
 from modules.errors import OMRError
 from modules.image_processing import load_image, preprocess_image, save_image
-from modules.paper_detection import PaperConfig, find_paper_contour, four_point_transform
+from modules.paper_detection import find_paper_contour, four_point_transform
 from modules.printed_form import detect_printed_layout
 
 ROOT = Path(__file__).resolve().parent
@@ -31,14 +28,6 @@ def process_omr(
     phase: int = 4,
     already_warped: bool = False,
 ) -> dict:
-
-
-
-
-
-
-
-
     if phase not in (2, 3, 4):
         raise OMRError("Phase kiểm thử chỉ nhận 2, 3 hoặc 4.")
     output_dir = Path(output_dir)
@@ -53,31 +42,33 @@ def process_omr(
     if phase == 2:
         return result
     layout = load_layout(layout_path or DEFAULT_LAYOUT_PATH)
+    paper_size = tuple(layout.paper_size)
+    corners = None
     if already_warped:
-        if tuple(original.shape[:2][::-1]) != tuple(layout.paper_size):
+        if original.shape[:2][::-1] != paper_size:
             raise OMRError(f"Ảnh --already-warped phải có kích thước {layout.paper_size}.")
-        warped = original.copy()
-        detected = original.copy()
+        warped = original
     else:
-        paper_config = PaperConfig(output_size=(layout.paper_size[0], layout.paper_size[1]))
-
-        corners = find_paper_contour(prepared.resized, paper_config)
-        detected = prepared.resized.copy()
-        cv2.polylines(detected, [np.rint(corners).astype(np.int32)], True, (0, 180, 0), 3)
-        warped = four_point_transform(prepared.resized, corners, paper_config.output_size)
+        corners = find_paper_contour(prepared.resized)
+        warped = four_point_transform(prepared.resized, corners, paper_size)
     if debug:
+        detected = original
+        if corners is not None:
+            detected = prepared.resized.copy()
+            cv2.polylines(detected, [np.rint(corners).astype(np.int32)], True, (0, 180, 0), 3)
         save_image(debug_dir / "03_detected_paper.jpg", detected)
         save_image(debug_dir / "04_warped.jpg", warped)
     result["processed_image"] = warped
     if phase == 3:
         return result
-    result["layout_name"] = "custom" if layout_path is not None else "sample_grid"
 
+    layout_name = "custom"
     if layout_path is None:
+        layout_name = "sample_grid"
         printed_layout = detect_printed_layout(warped)
         if printed_layout is not None:
-            layout = printed_layout
-            result["layout_name"] = "printed_50"
+            layout, layout_name = printed_layout, "printed_50"
+    result["layout_name"] = layout_name
     detection = analyze_answers(warped, layout, question_count=question_count)
     result.update(
         answers=detection.answers,
@@ -92,7 +83,6 @@ def process_omr(
 
 
 def main(argv: list[str] | None = None) -> int:
-
     parser = argparse.ArgumentParser(description="Hệ thống đọc và nhận diện phiếu trắc nghiệm OMR 50 câu.")
     parser.add_argument("image", nargs="?", type=Path, help="Đường dẫn ảnh phiếu")
     parser.add_argument("--phase", type=int, choices=(2, 3, 4), default=4, help="Mức độ xử lý: 2 (tiền xử lý), 3 (căn phẳng), 4 (nhận diện)")
@@ -133,4 +123,3 @@ if __name__ == "__main__":
         if callable(reconfigure):
             reconfigure(encoding="utf-8")
     raise SystemExit(main())
-            

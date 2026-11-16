@@ -1,5 +1,3 @@
-
-
 import json
 from pathlib import Path
 
@@ -15,13 +13,6 @@ class ScoringError(OMRError):
 
 
 def load_answer_key(path: str | Path) -> list[str]:
-
-
-
-
-
-
-
     path = Path(path)
     if not path.is_file():
         raise ScoringError(f"File đáp án chuẩn không tồn tại: {path}")
@@ -54,26 +45,6 @@ def load_answer_key(path: str | Path) -> list[str]:
 
 
 def score_answers(student_answers: list[str], correct_answers: list[str]) -> dict:
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     if not isinstance(student_answers, list) or not isinstance(correct_answers, list):
         raise ScoringError("Danh sách đáp án học sinh và đáp án chuẩn phải là dạng list.")
     if len(student_answers) != QUESTION_COUNT or len(correct_answers) != QUESTION_COUNT:
@@ -94,31 +65,28 @@ def score_answers(student_answers: list[str], correct_answers: list[str]) -> dic
             )
 
     details = []
-    correct_count = wrong_count = blank_count = multiple_count = 0
+    counts = dict.fromkeys(("correct", "wrong", "blank", "multiple"), 0)
 
     for i, (student, correct) in enumerate(zip(student_answers, correct_answers), start=1):
         if student == "BLANK":
             result = "blank"
-            blank_count += 1
         elif student == "MULTIPLE":
             result = "multiple"
-            multiple_count += 1
         elif student == correct:
             result = "correct"
-            correct_count += 1
         else:
             result = "wrong"
-            wrong_count += 1
+        counts[result] += 1
         details.append({"question": i, "student": student, "correct": correct, "result": result})
 
 
-    score = round(correct_count / QUESTION_COUNT * 10, 2)
+    score = round(counts["correct"] / QUESTION_COUNT * 10, 2)
     return {
         "score": score,
-        "correct_count": correct_count,
-        "wrong_count": wrong_count,
-        "blank_count": blank_count,
-        "multiple_count": multiple_count,
+        "correct_count": counts["correct"],
+        "wrong_count": counts["wrong"],
+        "blank_count": counts["blank"],
+        "multiple_count": counts["multiple"],
         "total": QUESTION_COUNT,
         "details": details,
     }
