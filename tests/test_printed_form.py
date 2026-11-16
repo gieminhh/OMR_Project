@@ -16,7 +16,7 @@ from modules.printed_form import detect_printed_layout
 
 ROOT = Path(__file__).resolve().parents[1]
 REAL_PHOTO = ROOT / "test_images" / "printed_50_real.png"
-# Đọc bằng mắt từ ảnh gốc, gồm câu 44 bỏ trống.
+
 EXPECTED = [
     "B", "B", "A", "A", "D", "D", "C", "C", "D", "B",
     "A", "C", "C", "D", "B", "D", "D", "B", "B", "A",
@@ -64,7 +64,7 @@ class PrintedFormTests(unittest.TestCase):
 
     def test_missing_marker_is_rejected(self):
         image = self.result["processed_image"].copy()
-        # Xóa một mốc trong dãy giữa, không chạm các ô trả lời.
+
         image[680:710, 448:480] = 200
         with self.assertRaisesRegex(AnswerDetectionError, "mốc"):
             detect_printed_layout(image)
@@ -75,7 +75,7 @@ class PrintedFormTests(unittest.TestCase):
         assert config is not None
         centers = config.centers
         assert centers is not None
-        x, y = centers[0][0]  # Thêm nét đen vào A; B đã được tô xanh.
+        x, y = centers[0][0]
         cv2.circle(image, (x, y), 8, (20, 20, 20), -1)
         answers = analyze_answers(image, config).answers
         expected = EXPECTED.copy()

@@ -60,21 +60,21 @@ class ScoringTests(unittest.TestCase):
     def test_rescore_when_answer_key_changes(self) -> None:
         """Thay đổi đáp án chuẩn sau khi chấm phải tính lại điểm chính xác."""
         student = ["A"] * 25 + ["B"] * 25
-        key_1 = ["A"] * 50  # Đúng 25 câu -> 5.0 điểm
-        key_2 = ["B"] * 50  # Đúng 25 câu -> 5.0 điểm
-        key_3 = ["A"] * 25 + ["B"] * 25  # Đúng 50 câu -> 10.0 điểm
-        key_4 = ["C"] * 50  # Đúng 0 câu -> 0.0 điểm
+        key_1 = ["A"] * 50
+        key_2 = ["B"] * 50
+        key_3 = ["A"] * 25 + ["B"] * 25
+        key_4 = ["C"] * 50
 
         res_1 = score_answers(student, key_1)
         self.assertEqual(res_1["score"], 5.0)
         self.assertEqual(res_1["correct_count"], 25)
 
-        # Đổi sang key_3 (khớp hoàn toàn)
+
         res_3 = score_answers(student, key_3)
         self.assertEqual(res_3["score"], 10.0)
         self.assertEqual(res_3["correct_count"], 50)
 
-        # Đổi sang key_4 (sai hoàn toàn)
+
         res_4 = score_answers(student, key_4)
         self.assertEqual(res_4["score"], 0.0)
         self.assertEqual(res_4["correct_count"], 0)

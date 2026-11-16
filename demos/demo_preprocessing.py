@@ -18,7 +18,7 @@ Chạy demo:
 import sys
 from pathlib import Path
 
-# Thêm thư mục gốc vào sys.path để import modules
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -60,34 +60,34 @@ def run_demo_preprocessing(
     print(f"Thư mục lưu ảnh trung gian: {output_dir}")
     print("=" * 60)
 
-    # Bước 1: Đọc ảnh
+
     print("[1/7] Đang đọc ảnh gốc...")
     original = load_image(image_path)
     save_image(output_dir / "01_original.jpg", original)
     print(f"      -> Kích thước ảnh gốc: {original.shape[1]}x{original.shape[0]} px")
 
-    # Bước 2: Resize chuẩn
+
     print("[2/7] Đang resize giữ tỷ lệ...")
     resized = resize_image(original, max_dimension=2200)
     save_image(output_dir / "02_resized.jpg", resized)
     print(f"      -> Kích thước sau resize: {resized.shape[1]}x{resized.shape[0]} px")
 
-    # Bước 3: Grayscale
+
     print("[3/7] Chuyển đổi sang ảnh xám (Grayscale)...")
     gray = to_grayscale(resized)
     save_image(output_dir / "03_grayscale.jpg", gray)
 
-    # Bước 4: Làm mờ Gaussian Blur
+
     print("[4/7] Áp dụng GaussianBlur khử nhiễu...")
     blurred = apply_blur(gray, kernel_size=5)
     save_image(output_dir / "04_blurred.jpg", blurred)
 
-    # Bước 5: Tách biên Canny
+
     print("[5/7] Tách biên bằng thuật toán Canny...")
     edges = cv2.Canny(blurred, 40, 140)
     save_image(output_dir / "05_canny_edges.jpg", edges)
 
-    # Bước 6: Tìm contour bao quanh phiếu và 4 góc
+
     print("[6/7] Tìm contour tờ phiếu và xác định 4 góc (cv2.findContours, approxPolyDP)...")
     config = PaperConfig()
     corners = find_paper_contour(resized, config)
@@ -96,7 +96,7 @@ def run_demo_preprocessing(
     for lbl, pt in zip(labels, corners):
         print(f"         • {lbl}: ({pt[0]:.1f}, {pt[1]:.1f})")
 
-    # Vẽ contour và 4 góc lên ảnh
+
     detected_vis = resized.copy()
     cv2.polylines(detected_vis, [np.rint(corners).astype(np.int32)], True, (0, 200, 0), 4)
     for idx, pt in enumerate(corners):
@@ -109,7 +109,7 @@ def run_demo_preprocessing(
         )
     save_image(output_dir / "06_paper_contour.jpg", detected_vis)
 
-    # Bước 7: Căn chỉnh phối cảnh Perspective Transform (Warp)
+
     print("[7/7] Căn phẳng phiếu về kích thước chuẩn (1000x1400) bằng warpPerspective...")
     warped = four_point_transform(resized, corners, config.output_size)
     save_image(output_dir / "07_warped.jpg", warped)

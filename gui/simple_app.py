@@ -15,7 +15,7 @@ from tkinter import filedialog, messagebox, ttk
 import cv2
 import numpy as np
 
-# Đảm bảo import được các module từ thư mục gốc
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -33,34 +33,34 @@ except ImportError:
     _HAS_PIL = False
 
 
-# ── BẢNG MÀU GIAO DIỆN HIỆN ĐẠI & PASTEL ──────────────────────────────
-COLOR_APP_BG        = "#F1F5F9"   # Nền tổng thể cửa sổ (xám sáng nhẹ)
-COLOR_CARD_BG       = "#FFFFFF"   # Nền các khung thẻ (trắng sạch)
-COLOR_BORDER        = "#E2E8F0"   # Màu đường viền mảnh thanh lịch
-COLOR_PRIMARY       = "#2563EB"   # Xanh dương nhấn hiện đại (Royal Blue)
-COLOR_TEXT_MAIN     = "#0F172A"   # Màu chữ chính (Slate 900)
-COLOR_TEXT_MUTED    = "#64748B"   # Màu chữ phụ (Slate 500)
 
-# 4 màu pastel cho thẻ thống kê (Chips)
-PASTEL_CORRECT_BG   = "#DCFCE7"   # Xanh lục pastel
+COLOR_APP_BG        = "#F1F5F9"
+COLOR_CARD_BG       = "#FFFFFF"
+COLOR_BORDER        = "#E2E8F0"
+COLOR_PRIMARY       = "#2563EB"
+COLOR_TEXT_MAIN     = "#0F172A"
+COLOR_TEXT_MUTED    = "#64748B"
+
+
+PASTEL_CORRECT_BG   = "#DCFCE7"
 PASTEL_CORRECT_FG   = "#15803D"
-PASTEL_WRONG_BG     = "#FEE2E2"   # Đỏ hồng pastel
+PASTEL_WRONG_BG     = "#FEE2E2"
 PASTEL_WRONG_FG     = "#B91C1C"
-PASTEL_BLANK_BG     = "#FEF9C3"   # Vàng chanh pastel
+PASTEL_BLANK_BG     = "#FEF9C3"
 PASTEL_BLANK_FG     = "#A16207"
-PASTEL_MULTI_BG     = "#FFEDD5"   # Cam đào pastel
+PASTEL_MULTI_BG     = "#FFEDD5"
 PASTEL_MULTI_FG     = "#C2410C"
 
-# Màu tô cả dòng cho ttk.Treeview
-ROW_CORRECT_BG      = "#D1E7DD"   # Xanh nhạt
+
+ROW_CORRECT_BG      = "#D1E7DD"
 ROW_CORRECT_FG      = "#0F5132"
-ROW_WRONG_BG        = "#F8D7DA"   # Đỏ nhạt
+ROW_WRONG_BG        = "#F8D7DA"
 ROW_WRONG_FG        = "#842029"
-ROW_BLANK_BG        = "#FFF3CD"   # Vàng nhạt
+ROW_BLANK_BG        = "#FFF3CD"
 ROW_BLANK_FG        = "#664D03"
-ROW_MULTI_BG        = "#FFE5D0"   # Cam nhạt
+ROW_MULTI_BG        = "#FFE5D0"
 ROW_MULTI_FG        = "#7C2D12"
-ROW_NORMAL_BG       = "#FFFFFF"   # Trắng (chưa chấm)
+ROW_NORMAL_BG       = "#FFFFFF"
 ROW_NORMAL_FG       = "#1E293B"
 
 
@@ -93,7 +93,7 @@ class ManualAnswerKeyDialog(tk.Toplevel):
         self._create_widgets(initial_answers)
 
     def _create_widgets(self, initial_answers: list[str] | None):
-        # 1. Header Frame
+
         header_frame = tk.Frame(self, bg=COLOR_CARD_BG, bd=1, relief="solid")
         header_frame.pack(side="top", fill="x", padx=12, pady=(10, 6))
 
@@ -115,7 +115,7 @@ class ManualAnswerKeyDialog(tk.Toplevel):
         )
         sub_lbl.pack(anchor="w", padx=12, pady=(0, 10))
 
-        # 2. Tool bar phụ (Thống kê số câu đã chọn & Tiện ích điền nhanh)
+
         tools_frame = tk.Frame(self, bg=COLOR_APP_BG)
         tools_frame.pack(side="top", fill="x", padx=12, pady=(0, 6))
 
@@ -151,7 +151,7 @@ class ManualAnswerKeyDialog(tk.Toplevel):
         )
         lbl_quick.pack(side="right", padx=(8, 2))
 
-        # 3. Vùng cuộn 50 câu (2 cột x 25 câu)
+
         container = tk.Frame(self, bg=COLOR_CARD_BG, bd=1, relief="solid")
         container.pack(side="top", fill="both", expand=True, padx=12, pady=4)
 
@@ -175,7 +175,7 @@ class ManualAnswerKeyDialog(tk.Toplevel):
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # Hỗ trợ cuộn chuột
+
         def _on_mousewheel(event):
             delta = -1 if event.delta < 0 else 1
             canvas.yview_scroll(delta, "units")
@@ -183,7 +183,7 @@ class ManualAnswerKeyDialog(tk.Toplevel):
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
         self.bind("<Destroy>", lambda e: canvas.unbind_all("<MouseWheel>"))
 
-        # Bố cục 2 cột
+
         cols_box = tk.Frame(scrollable_frame, bg=COLOR_CARD_BG)
         cols_box.pack(fill="both", expand=True, padx=16, pady=8)
 
@@ -196,7 +196,7 @@ class ManualAnswerKeyDialog(tk.Toplevel):
         right_col = tk.Frame(cols_box, bg=COLOR_CARD_BG)
         right_col.pack(side="left", fill="both", expand=True)
 
-        # Tạo 50 câu (Cột trái: 1-25, Cột phải: 26-50)
+
         for i in range(1, 51):
             col = left_col if i <= 25 else right_col
             init_val = ""
@@ -237,7 +237,7 @@ class ManualAnswerKeyDialog(tk.Toplevel):
 
         self._on_change()
 
-        # 4. Thanh nút hành động dưới cùng
+
         bottom_frame = tk.Frame(self, bg=COLOR_CARD_BG, bd=1, relief="solid")
         bottom_frame.pack(side="bottom", fill="x", padx=12, pady=(6, 10))
 
@@ -334,7 +334,7 @@ class SimpleOMRApp(tk.Tk):
         self.minsize(1020, 640)
         self.configure(bg=COLOR_APP_BG)
 
-        # Trạng thái dữ liệu
+
         self.image_path: Path | None = None
         self.loaded_image: np.ndarray | None = None
         self.display_image: np.ndarray | None = None
@@ -343,7 +343,7 @@ class SimpleOMRApp(tk.Tk):
         self.score_result: dict | None = None
         self._photo_ref = None
 
-        # Cấu hình giao diện
+
         self._setup_styles()
         self._create_widgets()
         self._draw_placeholder()
@@ -355,7 +355,7 @@ class SimpleOMRApp(tk.Tk):
         if "clam" in self.style.theme_names():
             self.style.theme_use("clam")
 
-        # Nút bấm hành động trên thanh công cụ
+
         self.style.configure(
             "Action.TButton",
             font=("Segoe UI", 9, "bold"),
@@ -371,7 +371,7 @@ class SimpleOMRApp(tk.Tk):
             foreground=[("active", COLOR_PRIMARY), ("disabled", "#94A3B8")],
         )
 
-        # Cấu hình bảng Treeview
+
         self.style.configure(
             "Treeview",
             font=("Segoe UI", 10),
@@ -392,9 +392,9 @@ class SimpleOMRApp(tk.Tk):
 
     def _create_widgets(self):
         """Khởi tạo bố cục các thành phần giao diện."""
-        # ═════════════════════════════════════════════════════════════════
-        # 1. THANH NÚT TRÊN CÙNG (TOOLBAR)
-        # ═════════════════════════════════════════════════════════════════
+
+
+
         toolbar_frame = tk.Frame(self, bg=COLOR_CARD_BG, bd=1, relief="solid", highlightthickness=0)
         toolbar_frame.pack(side="top", fill="x", padx=12, pady=(10, 6))
 
@@ -436,7 +436,7 @@ class SimpleOMRApp(tk.Tk):
         )
         self.btn_excel.pack(side="left", padx=2)
 
-        # Huy hiệu trạng thái đáp án chuẩn ở bên phải
+
         self.lbl_key_status = tk.Label(
             inner_tb,
             text="● Chưa có đáp án chuẩn",
@@ -450,13 +450,13 @@ class SimpleOMRApp(tk.Tk):
         )
         self.lbl_key_status.pack(side="right", padx=4)
 
-        # ═════════════════════════════════════════════════════════════════
-        # 2. VÙNG NỘI DUNG CHÍNH (BỐ CỤC 2 CỘT)
-        # ═════════════════════════════════════════════════════════════════
+
+
+
         content_box = tk.Frame(self, bg=COLOR_APP_BG)
         content_box.pack(fill="both", expand=True, padx=12, pady=4)
 
-        # ── CỘT TRÁI: KHUNG HIỂN THỊ ẢNH PHIẾU OMR ──────────────────────
+
         left_card = tk.Frame(content_box, bg=COLOR_CARD_BG, bd=1, relief="solid")
         left_card.pack(side="left", fill="both", expand=True, padx=(0, 6))
 
@@ -485,7 +485,7 @@ class SimpleOMRApp(tk.Tk):
         self.canvas.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         self.canvas.bind("<Configure>", self._on_canvas_resize)
 
-        # ── CỘT PHẢI: KẾT QUẢ NHẬN DIỆN & CHẤM ĐIỂM ────────────────────
+
         right_card = tk.Frame(content_box, bg=COLOR_CARD_BG, bd=1, relief="solid", width=480)
         right_card.pack(side="right", fill="both", expand=False, padx=(6, 0))
         right_card.pack_propagate(False)
@@ -502,7 +502,7 @@ class SimpleOMRApp(tk.Tk):
         )
         lbl_res_title.pack(side="left")
 
-        # ── Khung điểm số nổi bật (Score Hero Card)
+
         score_card = tk.Frame(right_card, bg="#F8FAFC", bd=1, relief="solid")
         score_card.pack(fill="x", padx=10, pady=(0, 6))
 
@@ -533,7 +533,7 @@ class SimpleOMRApp(tk.Tk):
         )
         self.lbl_stats.pack(anchor="w", padx=12, pady=(0, 6))
 
-        # ── 4 ô thống kê pastel: Đúng, Sai, Trống, Nhiều ô
+
         chips_frame = tk.Frame(right_card, bg=COLOR_CARD_BG)
         chips_frame.pack(fill="x", padx=10, pady=(0, 6))
 
@@ -542,7 +542,7 @@ class SimpleOMRApp(tk.Tk):
         self.chip_blank   = self._make_pastel_chip(chips_frame, "⚪ Trống", "--", PASTEL_BLANK_BG, PASTEL_BLANK_FG, 2)
         self.chip_multi   = self._make_pastel_chip(chips_frame, "⚠ Nhiều ô", "--", PASTEL_MULTI_BG, PASTEL_MULTI_FG, 3)
 
-        # ── Bảng kết quả 50 câu
+
         lbl_tbl_title = tk.Label(
             right_card,
             text="CHI TIẾT 50 CÂU TRẢ LỜI",
@@ -568,7 +568,7 @@ class SimpleOMRApp(tk.Tk):
         self.tree.column("correct",  width=95,  minwidth=85, anchor="center")
         self.tree.column("result",   width=170, minwidth=140, anchor="w")
 
-        # Cấu hình màu nền & chữ cho từng dòng bảng kết quả
+
         self.tree.tag_configure("correct",  background=ROW_CORRECT_BG, foreground=ROW_CORRECT_FG)
         self.tree.tag_configure("wrong",    background=ROW_WRONG_BG,   foreground=ROW_WRONG_FG)
         self.tree.tag_configure("blank",    background=ROW_BLANK_BG,   foreground=ROW_BLANK_FG)
@@ -581,9 +581,9 @@ class SimpleOMRApp(tk.Tk):
         self.tree.pack(side="left", fill="both", expand=True)
         scroll_y.pack(side="right", fill="y")
 
-        # ═════════════════════════════════════════════════════════════════
-        # 3. THANH TRẠNG THÁI DƯỚI CÙNG (STATUS BAR)
-        # ═════════════════════════════════════════════════════════════════
+
+
+
         status_bar_frame = tk.Frame(self, bg=COLOR_CARD_BG, height=28, bd=1, relief="solid")
         status_bar_frame.pack(side="bottom", fill="x")
 
@@ -646,9 +646,9 @@ class SimpleOMRApp(tk.Tk):
             fill="#94A3B8",
         )
 
-    # ═════════════════════════════════════════════════════════════════
-    # XỬ LÝ SỰ KIỆN NÚT BẤM (BUTTON HANDLERS)
-    # ═════════════════════════════════════════════════════════════════
+
+
+
 
     def on_open_image(self):
         """1. Mở hộp thoại chọn tệp ảnh phiếu thi."""
@@ -660,26 +660,27 @@ class SimpleOMRApp(tk.Tk):
             return
 
         try:
+
             self.image_path = Path(path)
             self.loaded_image = load_image(self.image_path)
             self.display_image = self.loaded_image.copy()
             self._render_image(self.display_image)
 
-            # Cập nhật thông tin ảnh
+
             h, w = self.loaded_image.shape[:2]
             self.lbl_image_info.configure(text=f"{self.image_path.name} ({w}×{h})")
 
-            # Reset các kết quả nhận diện trước đó
+
             self.student_answers = None
             self.score_result = None
             self._clear_table()
 
-            # Đặt lại Score Card
+
             self.lbl_score.configure(text="-- / 10", fg=COLOR_PRIMARY)
             self._update_stat_chips(0, 0, 0, 0, is_reset=True)
             self.lbl_stats.configure(text=f"Đã mở: {self.image_path.name}. Hãy nhấn 'Đọc phiếu'.")
 
-            # Điều khiển nút
+
             self.btn_scan.configure(state="normal")
             self.btn_score.configure(state="disabled")
             self.btn_excel.configure(state="disabled")
@@ -698,6 +699,7 @@ class SimpleOMRApp(tk.Tk):
         self.update_idletasks()
 
         try:
+
             result = process_omr(self.image_path, debug=False)
             self.student_answers = result.get("answers")
             annotated = result.get("annotated_image")
@@ -706,18 +708,18 @@ class SimpleOMRApp(tk.Tk):
                 self.display_image = annotated
                 self._render_image(self.display_image)
 
-            # Kiểm tra định dạng 50 câu
+
             v_res = validate_answers(self.student_answers)
             if not v_res["valid"]:
                 messagebox.showwarning("Cảnh báo dữ liệu", "; ".join(v_res["errors"]), parent=self)
 
-            # Cập nhật bảng kết quả (chưa chấm)
+
             self._update_table_unscored()
 
-            # Bật nút xuất Excel (Chế độ 1)
+
             self.btn_excel.configure(state="normal")
 
-            # Xử lý trạng thái nút Chấm điểm & Thống kê
+
             if self.answer_key:
                 self.btn_score.configure(state="normal")
                 self.lbl_score.configure(text="Chưa chấm", fg=COLOR_TEXT_MUTED)
@@ -737,7 +739,7 @@ class SimpleOMRApp(tk.Tk):
                 self.lbl_stats.configure(
                     text=f"Đã nhận diện đủ 50 câu (Bỏ trống: {v_res['blank_count']}, Tô nhiều: {v_res['multiple_count']})"
                 )
-                # Tuyệt đối không hiển thị số câu đã tô dưới nhãn "Đúng" khi chưa chấm
+
                 self._update_stat_chips(
                     "--",
                     "--",
@@ -836,11 +838,11 @@ class SimpleOMRApp(tk.Tk):
             fg=PASTEL_CORRECT_FG,
         )
 
-        # 1. Vô hiệu hóa kết quả chấm điểm cũ để tránh hiển thị sai lệch
+
         self.score_result = None
         self.lbl_score.configure(text="Chưa chấm", fg=COLOR_TEXT_MUTED)
 
-        # 2. Không xóa ảnh phiếu và 50 đáp án học sinh đã nhận diện
+
         if self.student_answers is not None:
             self._update_table_unscored()
             v_res = validate_answers(self.student_answers)
@@ -866,6 +868,7 @@ class SimpleOMRApp(tk.Tk):
             return
 
         try:
+
             self.score_result = score_answers(self.student_answers, self.answer_key)
             self._update_table_scored()
 
@@ -875,7 +878,7 @@ class SimpleOMRApp(tk.Tk):
             blank   = self.score_result["blank_count"]
             multi   = self.score_result["multiple_count"]
 
-            # Cập nhật điểm số nổi bật (xanh khi đậu, đỏ khi trượt)
+
             color_score = "#16A34A" if score >= 5.0 else "#DC2626"
             self.lbl_score.configure(text=f"{score:.2f} / 10", fg=color_score)
             self.lbl_stats.configure(
@@ -911,12 +914,13 @@ class SimpleOMRApp(tk.Tk):
             return
 
         try:
+
             if self.score_result is not None:
-                # Chế độ 2: Đã chấm điểm
+
                 out = export_excel(self.score_result, save_path)
                 mode_name = "kết quả chấm điểm đầy đủ"
             else:
-                # Chế độ 1: Chưa chấm điểm (kết quả đọc thô)
+
                 out = export_excel(None, save_path, answers=self.student_answers)
                 mode_name = "kết quả nhận diện (chưa chấm)"
 
@@ -926,9 +930,9 @@ class SimpleOMRApp(tk.Tk):
             messagebox.showerror("Lỗi xuất Excel", str(exc), parent=self)
             self._set_status(f"Lỗi xuất Excel: {exc}", is_error=True)
 
-    # ═════════════════════════════════════════════════════════════════
-    # CẬP NHẬT DỮ LIỆU & TÔ MÀU BẢNG (ROW COLORING)
-    # ═════════════════════════════════════════════════════════════════
+
+
+
 
     def _update_table_unscored(self):
         """Cập nhật bảng 50 câu khi chưa chấm điểm."""
@@ -944,7 +948,7 @@ class SimpleOMRApp(tk.Tk):
             else:
                 status, tag = "Đã chọn", "normal"
 
-            # Gán tag màu cho toàn bộ dòng
+
             self.tree.insert("", "end", values=(i, ans, "--", status), tags=(tag,))
 
     def _update_table_scored(self):
@@ -966,7 +970,7 @@ class SimpleOMRApp(tk.Tk):
             cor = item["correct"]
             res_text, tag = result_map.get(item["result"], (item["result"], "normal"))
 
-            # Gán tag màu cho toàn bộ dòng
+
             self.tree.insert("", "end", values=(q, stu, cor, res_text), tags=(tag,))
 
     def _update_stat_chips(self, correct, wrong, blank, multi, is_reset: bool = False):

@@ -17,13 +17,13 @@ class ExportError(OMRError):
     """Lỗi khi xuất file Excel."""
 
 
-# Màu sắc
-_COLOR_CORRECT  = "C6EFCE"   # xanh lá nhạt
-_COLOR_WRONG    = "FFC7CE"   # đỏ nhạt
-_COLOR_BLANK    = "FFEB9C"   # vàng nhạt
-_COLOR_MULTIPLE = "FFE5D0"   # cam nhạt (đồng bộ giao diện Tkinter)
-_COLOR_HEADER   = "4472C4"   # xanh đậm
-_COLOR_SUMMARY  = "D9E1F2"   # xanh nhạt tổng kết
+
+_COLOR_CORRECT  = "C6EFCE"
+_COLOR_WRONG    = "FFC7CE"
+_COLOR_BLANK    = "FFEB9C"
+_COLOR_MULTIPLE = "FFE5D0"
+_COLOR_HEADER   = "4472C4"
+_COLOR_SUMMARY  = "D9E1F2"
 
 
 def export_excel(
@@ -55,7 +55,7 @@ def export_excel(
             "Thư viện openpyxl chưa cài. Chạy: pip install openpyxl"
         )
 
-    # Xác định chế độ xuất: Chấm điểm (Mode 2) hay Chỉ đọc kết quả (Mode 1)
+
     is_scored = False
     unscored_answers = None
 
@@ -100,9 +100,9 @@ def export_excel(
     summary_align = Alignment(horizontal="center", vertical="center")
 
     if is_scored:
-        # ════════════════════════════════════════════════════════════
-        # CHẾ ĐỘ 2 – ĐÃ CHẤM ĐIỂM (CÓ ĐÁP ÁN CHUẨN)
-        # ════════════════════════════════════════════════════════════
+
+
+
         headers = ["Câu", "Đáp án HS", "Đáp án đúng", "Kết quả"]
         for col_idx, header in enumerate(headers, start=1):
             cell = ws.cell(row=1, column=col_idx, value=header)
@@ -161,7 +161,7 @@ def export_excel(
                 cell.border = thin_border
                 cell.alignment = summary_align
 
-        # Điểm làm nổi bật
+
         score_cell = ws.cell(row=summary_row + 5, column=2)
         score_cell.font = Font(bold=True, size=14, color="C00000", name="Calibri")
 
@@ -170,9 +170,9 @@ def export_excel(
             ws.column_dimensions[get_column_letter(col_idx)].width = width
 
     else:
-        # ════════════════════════════════════════════════════════════
-        # CHẾ ĐỘ 1 – CHỈ ĐỌC KẾT QUẢ (KHÔNG CÓ ĐÁP ÁN CHUẨN)
-        # ════════════════════════════════════════════════════════════
+
+
+
         headers = ["Câu", "Đáp án nhận diện", "Trạng thái"]
         for col_idx, header in enumerate(headers, start=1):
             cell = ws.cell(row=1, column=col_idx, value=header)
@@ -234,8 +234,9 @@ def export_excel(
         for col_idx, width in enumerate(col_widths, start=1):
             ws.column_dimensions[get_column_letter(col_idx)].width = width
 
-    # Ghi file
+
     try:
+
         wb.save(output_path)
     except PermissionError as exc:
         raise ExportError(

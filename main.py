@@ -42,6 +42,7 @@ def process_omr(
     if phase not in (2, 3, 4):
         raise OMRError("Phase kiểm thử chỉ nhận 2, 3 hoặc 4.")
     output_dir = Path(output_dir)
+
     original = load_image(image_path)
     prepared = preprocess_image(original)
     debug_dir = output_dir / "debug"
@@ -59,6 +60,7 @@ def process_omr(
         detected = original.copy()
     else:
         paper_config = PaperConfig(output_size=(layout.paper_size[0], layout.paper_size[1]))
+
         corners = find_paper_contour(prepared.resized, paper_config)
         detected = prepared.resized.copy()
         cv2.polylines(detected, [np.rint(corners).astype(np.int32)], True, (0, 180, 0), 3)
@@ -70,6 +72,7 @@ def process_omr(
     if phase == 3:
         return result
     result["layout_name"] = "custom" if layout_path is not None else "sample_grid"
+
     if layout_path is None:
         printed_layout = detect_printed_layout(warped)
         if printed_layout is not None:

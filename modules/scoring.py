@@ -111,6 +111,7 @@ def score_answers(student_answers: list[str], correct_answers: list[str]) -> dic
             wrong_count += 1
         details.append({"question": i, "student": student, "correct": correct, "result": result})
 
+
     score = round(correct_count / QUESTION_COUNT * 10, 2)
     return {
         "score": score,

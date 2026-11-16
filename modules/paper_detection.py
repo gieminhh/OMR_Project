@@ -8,7 +8,7 @@ import numpy as np
 from .errors import PaperDetectionError
 from .image_processing import apply_blur, validate_image
 
-STANDARD_SIZE = (1000, 1400)  # width, height
+STANDARD_SIZE = (1000, 1400)
 APPROXIMATION_RATIOS = (0.015, 0.025, 0.04)
 BACKGROUND_THRESHOLD_FRACTIONS = (0.20, 0.35, 0.50)
 MIN_PAPER_SOLIDITY = 0.95
@@ -76,8 +76,8 @@ def find_paper_contour(
     for mask in (edges, bright):
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         candidates.extend(contours)
-    # Vải có họa tiết nối với giấy ở ngưỡng Otsu. Tách các cầu nối mảnh
-    # ở nhiều mức sáng; chỉ bù các vết lõm nhỏ khi contour gần lồi.
+
+
     smooth_kernel = max(3, round(min(width, height) * 0.009) | 1)
     smooth = apply_blur(image, smooth_kernel)
     otsu, _ = cv2.threshold(smooth, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)

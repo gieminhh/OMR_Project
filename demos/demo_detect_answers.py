@@ -18,7 +18,7 @@ Chạy demo:
 import sys
 from pathlib import Path
 
-# Thêm thư mục gốc vào sys.path để import modules
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -50,7 +50,7 @@ def run_demo_detect_answers(
     print(f"Ảnh đầu vào: {image_path}")
     print("=" * 60)
 
-    # 1. Tải ảnh và căn phẳng (Warp) nếu chưa căn
+
     raw_image = load_image(image_path)
     if tuple(raw_image.shape[:2][::-1]) == (1000, 1400):
         print("[1/5] Ảnh đã ở kích thước chuẩn 1000x1400, bỏ qua bước tìm góc.")
@@ -59,7 +59,7 @@ def run_demo_detect_answers(
         print("[1/5] Căn phẳng phiếu (Warp) về kích thước chuẩn 1000x1400...")
         warped = detect_and_warp_paper(resize_image(raw_image))
 
-    # 2. Xác định mẫu phiếu (Layout)
+
     print("[2/5] Xác định cấu hình layout (Mốc in thật hoặc Layout chuẩn)...")
     layout = load_layout(DEFAULT_LAYOUT_PATH)
     printed_layout = detect_printed_layout(warped)
@@ -70,11 +70,11 @@ def run_demo_detect_answers(
         layout_name = "Mẫu chuẩn phát triển (sample_grid)"
     print(f"      -> Layout sử dụng: {layout_name}")
 
-    # 3. Phân tích vùng đáp án và đo mực từng ô
+
     print("[3/5] Quét 50 câu x 4 ô (A, B, C, D) và đo tỷ lệ mực pixel (countNonZero)...")
     detection = analyze_answers(warped, layout, question_count=50)
 
-    # 4. Thống kê kết quả nhận diện
+
     answers = detection.answers
     blank_count = answers.count("BLANK")
     multi_count = answers.count("MULTIPLE")
@@ -89,7 +89,7 @@ def run_demo_detect_answers(
     print("-" * 60)
     print(f"  Thống kê: Đã chọn: {chosen_count}/50 | Bỏ trống: {blank_count} | Tô nhiều: {multi_count}")
 
-    # 5. Lưu ảnh minh họa
+
     print("[5/5] Lưu ảnh đánh dấu vùng đáp án và vòng tròn ô tô...")
     save_image(output_dir / "01_answer_region.jpg", detection.answer_region_image)
     save_image(output_dir / "02_detected_bubbles.jpg", detection.annotated_image)

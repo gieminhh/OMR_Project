@@ -221,6 +221,7 @@ def analyze_answers(
             fills.append(float(np.count_nonzero(patch[sample_mask]) / sample_mask.sum()))
             ring_patch = ring_region[cy - outer_radius:cy + outer_radius + 1, cx - outer_radius:cx + outer_radius + 1]
             rings.append(float(np.count_nonzero(ring_patch[ring_mask]) / ring_mask.sum()))
+
         answer = classify_ratios(fills, config.fill_threshold)
         answers.append(answer)
         fill_ratios.append(fills)
