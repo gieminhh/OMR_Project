@@ -1,16 +1,16 @@
-"""Minh họa quy trình xác thực dữ liệu, chấm điểm và xuất Excel 2 chế độ.
 
-Các chức năng chính:
-  1. Xác thực tính hợp lệ của 50 đáp án (validate_answers).
-  2. Đọc file đáp án chuẩn JSON (load_answer_key).
-  3. So sánh đáp án, tính điểm thang 10 và thống kê đúng/sai/bỏ trống/tô nhiều (score_answers).
-  4. Xuất file Excel với 2 chế độ:
-     - Chế độ 1: Chỉ đọc kết quả nhận diện (không cần đáp án chuẩn, không tự tạo điểm).
-     - Chế độ 2: Đã chấm điểm (đầy đủ đáp án HS, đáp án đúng, trạng thái, điểm thang 10).
 
-Chạy demo:
-    python demos/demo_scoring.py
-"""
+
+
+
+
+
+
+
+
+
+
+
 
 import sys
 from pathlib import Path
@@ -27,7 +27,7 @@ from modules.validation import validate_answers
 
 
 def run_demo_scoring(output_dir: str | Path | None = None) -> dict:
-    """Chạy demo quy trình xác thực, chấm điểm và xuất Excel 2 chế độ."""
+
     if output_dir is None:
         output_dir = ROOT / "output" / "demo_scoring"
     output_dir = Path(output_dir)

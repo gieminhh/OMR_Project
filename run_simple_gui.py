@@ -1,6 +1,6 @@
-"""Khởi chạy giao diện Tkinter đọc phiếu trắc nghiệm OMR 50 câu.
-Sử dụng: python run_simple_gui.py
-"""
+
+
+
 
 import subprocess
 import sys
@@ -13,7 +13,7 @@ if str(ROOT) not in sys.path:
 
 
 def _try_venv_rerun() -> bool:
-    """Nếu đang dùng Python sai, thử lại bằng interpreter trong .venv."""
+
     current = Path(sys.executable).resolve()
     candidates = [
         ROOT / ".venv" / "Scripts" / "python.exe",

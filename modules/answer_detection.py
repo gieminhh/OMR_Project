@@ -1,8 +1,8 @@
-"""Đọc 2 cột × 25 hàng × 4 ô theo vị trí và tỷ lệ mực, không OCR.
 
-Tọa độ config là pixel trên ảnh đã warp; các hộp dùng [x0, y0, x1, y1].
-Mặc định trả đúng 50 phần tử. question_count chỉ dành cho kiểm thử 5/10 câu.
-"""
+
+
+
+
 
 import json
 from dataclasses import dataclass
@@ -24,7 +24,7 @@ COLOR_AMBIGUOUS = (0, 100, 240)
 
 @dataclass(frozen=True)
 class AnswerConfig:
-    """Layout mẫu; thay bằng config phù hợp trước khi dùng phiếu thật."""
+
 
     paper_size: tuple[int, int] = (1000, 1400)
     answer_region: tuple[int, int, int, int] = (120, 250, 930, 1330)
@@ -47,7 +47,7 @@ class AnswerConfig:
 
 @dataclass
 class AnswerDetectionResult:
-    """Đáp án cùng số đo thô và ảnh đánh dấu để hiệu chỉnh layout."""
+
 
     answers: list[str]
     fill_ratios: list[list[float]]
@@ -57,7 +57,7 @@ class AnswerDetectionResult:
 
 
 def validate_config(config: AnswerConfig) -> None:
-    """Từ chối layout sai hoặc bubble tràn khỏi ô trước khi xử lý."""
+
     try:
         width, height = config.paper_size
         if any(type(n) is not int or n < 3 for n in (width, height)):
@@ -113,7 +113,7 @@ def validate_config(config: AnswerConfig) -> None:
 
 
 def load_layout(path: str | Path) -> AnswerConfig:
-    """Đọc JSON; cấm khóa lạ để phát hiện lỗi gõ tên cấu hình."""
+
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -126,7 +126,7 @@ def load_layout(path: str | Path) -> AnswerConfig:
 
 
 def bubble_centers(config: AnswerConfig) -> list[list[tuple[int, int]]]:
-    """Lần lượt từ trên xuống cột trái (1–25), rồi cột phải (26–50)."""
+
     validate_config(config)
     if config.centers is not None:
         return [[(round(x), round(y)) for x, y in row] for row in config.centers]
@@ -142,13 +142,13 @@ def bubble_centers(config: AnswerConfig) -> list[list[tuple[int, int]]]:
 
 
 def classify_ratios(ratios: list[float], fill_threshold: float) -> str:
-    """Phân loại kết quả tô câu hỏi dựa trên tỷ lệ pixel mực (fill_threshold).
-    
-    Quy tắc phân loại:
-      - 0 ô vượt ngưỡng fill_threshold: 'BLANK' (học sinh bỏ trống câu này).
-      - Đúng 1 ô vượt ngưỡng: Trả về chữ cái ô đó ('A', 'B', 'C', hoặc 'D').
-      - Từ 2 ô trở lên vượt ngưỡng: 'MULTIPLE' (học sinh tô nhiều hơn 1 đáp án).
-    """
+
+
+
+
+
+
+
     selected = []
     for label, ratio in zip(CHOICES, ratios):
         if ratio >= fill_threshold:
@@ -164,18 +164,18 @@ def classify_ratios(ratios: list[float], fill_threshold: float) -> str:
 def analyze_answers(
     warped_image: np.ndarray, config: AnswerConfig | None = None, *, question_count: int = QUESTION_COUNT
 ) -> AnswerDetectionResult:
-    """Đo mực trong lòng ô; kiểm tra viền bubble để từ chối layout lệch.
 
-    Thuật toán:
-      1. Nhị phân hóa vùng đáp án bằng adaptive thresholding.
-      2. Tạo mask hình tròn lòng ô (sample_mask) và mask vành khuyên viền ô (ring_mask).
-      3. Với mỗi câu trong 50 câu (4 ô A, B, C, D):
-         - Cắt patch cục bộ quanh tâm ô.
-         - Dùng np.count_nonzero đếm số pixel mực (255) trong sample_mask.
-         - Tính fill_ratio = pixel_mực / tổng_pixel_mặt_nạ.
-      4. Phân loại đáp án bằng classify_ratios().
-      5. Vẽ hình tròn cv2.circle và text cv2.putText đánh dấu kết quả lên ảnh.
-    """
+
+
+
+
+
+
+
+
+
+
+
     config = config or AnswerConfig()
     validate_config(config)
     validate_image(warped_image)
@@ -247,7 +247,7 @@ def analyze_answers(
 def _refine_center(
     center: tuple[int, int], binary: np.ndarray, ring_mask: np.ndarray, radius: int, search: int
 ) -> tuple[int, int]:
-    """Tìm viền ô gần vị trí marker dự đoán; phạt dịch xa để tránh nhảy hàng."""
+
     x, y = center
     best_score, best_center = -float("inf"), center
     distance_penalty = 0.004
@@ -267,5 +267,5 @@ def _refine_center(
 def detect_answers(
     warped_image: np.ndarray, config: AnswerConfig | None = None, *, question_count: int = QUESTION_COUNT
 ) -> list[str]:
-    """API trả list A/B/C/D/BLANK/MULTIPLE, mặc định đúng 50 phần tử."""
+
     return analyze_answers(warped_image, config, question_count=question_count).answers

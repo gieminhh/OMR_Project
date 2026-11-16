@@ -1,10 +1,10 @@
-"""Giao diện Tkinter đọc và chấm điểm phiếu trắc nghiệm OMR 50 câu.
 
-Bố cục giao diện:
-  - Thanh công cụ trên cùng: Chọn ảnh, Đọc phiếu, Nạp JSON, Nhập thủ công, Xuất key JSON, Chấm điểm, Xuất Excel.
-  - Cột trái: Vùng hiển thị ảnh phiếu trắc nghiệm (tự động co giãn theo khung Canvas).
-  - Cột phải: Khối điểm số nổi bật, 4 thẻ thống kê pastel và bảng 50 câu tô màu từng dòng.
-"""
+
+
+
+
+
+
 
 import json
 import sys
@@ -65,7 +65,7 @@ ROW_NORMAL_FG       = "#1E293B"
 
 
 class ManualAnswerKeyDialog(tk.Toplevel):
-    """Cửa sổ nhập và chỉnh sửa đáp án chuẩn thủ công cho 50 câu trắc nghiệm."""
+
 
     def __init__(
         self,
@@ -261,7 +261,7 @@ class ManualAnswerKeyDialog(tk.Toplevel):
         btn_cancel.pack(side="right", padx=4)
 
     def _on_key_press(self, event, var: tk.StringVar):
-        """Hỗ trợ gõ phím nhanh A, B, C, D trực tiếp từ bàn phím khi chọn ô."""
+
         char = (event.char or "").upper()
         if char in ("A", "B", "C", "D"):
             var.set(char)
@@ -270,7 +270,7 @@ class ManualAnswerKeyDialog(tk.Toplevel):
         return None
 
     def _on_change(self):
-        """Cập nhật trực tiếp số câu đã chọn trên nhãn thống kê giao diện."""
+
         answers = [v.get().strip().upper() for v in self.vars]
         valid_cnt = sum(1 for a in answers if a in ("A", "B", "C", "D"))
         if hasattr(self, "lbl_counter"):
@@ -280,17 +280,17 @@ class ManualAnswerKeyDialog(tk.Toplevel):
             )
 
     def get_answers(self) -> list[str]:
-        """Lấy danh sách 50 đáp án hiện tại dưới dạng mảng ký tự chữ hoa."""
+
         return [v.get().strip().upper() for v in self.vars]
 
     def set_answer(self, index: int, value: str):
-        """Gán đáp án cho câu thứ index (chỉ số 0 đến 49) và làm mới giao diện."""
+
         if 0 <= index < len(self.vars):
             self.vars[index].set(value.strip().upper())
             self._on_change()
 
     def fill_all(self, value: str):
-        """Tiện ích điền nhanh toàn bộ 50 câu với cùng một đáp án (A, B, C hoặc D)."""
+
         val = value.strip().upper()
         if val in ("A", "B", "C", "D"):
             for v in self.vars:
@@ -298,13 +298,13 @@ class ManualAnswerKeyDialog(tk.Toplevel):
             self._on_change()
 
     def clear_all(self):
-        """Xóa trắng toàn bộ 50 lựa chọn để người dùng nhập lại từ đầu."""
+
         for v in self.vars:
             v.set("")
         self._on_change()
 
     def on_save(self):
-        """Kiểm tra hợp lệ đủ 50 câu và lưu bộ đáp án chuẩn vào ứng dụng chính."""
+
         answers = self.get_answers()
         v_res = validate_answer_key(answers)
         if not v_res["valid"]:
@@ -325,7 +325,7 @@ class ManualAnswerKeyDialog(tk.Toplevel):
 
 
 class SimpleOMRApp(tk.Tk):
-    """Ứng dụng Tkinter đọc và chấm điểm phiếu trắc nghiệm OMR 50 câu."""
+
 
     def __init__(self):
         super().__init__()
@@ -350,7 +350,7 @@ class SimpleOMRApp(tk.Tk):
         self._set_status("Sẵn sàng. Hãy chọn ảnh phiếu để bắt đầu.")
 
     def _setup_styles(self):
-        """Đồng bộ style cho các widget ttk bằng theme 'clam'."""
+
         self.style = ttk.Style(self)
         if "clam" in self.style.theme_names():
             self.style.theme_use("clam")
@@ -391,7 +391,7 @@ class SimpleOMRApp(tk.Tk):
         self.style.map("Treeview.Heading", background=[("active", "#E2E8F0")])
 
     def _create_widgets(self):
-        """Khởi tạo bố cục các thành phần giao diện."""
+
 
 
 
@@ -599,7 +599,7 @@ class SimpleOMRApp(tk.Tk):
         self.lbl_status.pack(fill="x", pady=4)
 
     def _make_pastel_chip(self, parent, title: str, initial_val: str, bg_color: str, fg_color: str, col: int) -> tk.Label:
-        """Tạo thẻ thống kê pastel hiển thị số lượng theo trạng thái."""
+
         parent.columnconfigure(col, weight=1)
         chip = tk.Frame(parent, bg=bg_color, bd=1, relief="solid")
         chip.grid(row=0, column=col, padx=3, sticky="ew")
@@ -612,14 +612,14 @@ class SimpleOMRApp(tk.Tk):
         return val_label
 
     def _set_status(self, text: str, is_error: bool = False):
-        """Cập nhật thông báo thanh trạng thái."""
+
         self.lbl_status.configure(
             text=text,
             fg="#DC2626" if is_error else COLOR_TEXT_MAIN,
         )
 
     def _draw_placeholder(self):
-        """Vẽ khung trống hướng dẫn khi chưa có ảnh."""
+
         self.canvas.delete("all")
         w = max(self.canvas.winfo_width(), 400)
         h = max(self.canvas.winfo_height(), 400)
@@ -651,7 +651,7 @@ class SimpleOMRApp(tk.Tk):
 
 
     def on_open_image(self):
-        """1. Mở hộp thoại chọn tệp ảnh phiếu thi."""
+
         path = filedialog.askopenfilename(
             title="Chọn ảnh phiếu trắc nghiệm OMR",
             filetypes=[("Tệp ảnh", "*.png;*.jpg;*.jpeg;*.bmp"), ("Tất cả", "*.*")],
@@ -691,7 +691,7 @@ class SimpleOMRApp(tk.Tk):
             self._set_status(f"Lỗi đọc ảnh: {exc}", is_error=True)
 
     def on_scan_sheet(self):
-        """2. Đọc phiếu 50 câu qua OpenCV."""
+
         if self.image_path is None:
             return
 
@@ -753,7 +753,7 @@ class SimpleOMRApp(tk.Tk):
             self._set_status(f"Lỗi nhận diện phiếu: {exc}", is_error=True)
 
     def on_load_key(self):
-        """3. Nạp đáp án chuẩn từ file JSON."""
+
         path = filedialog.askopenfilename(
             title="Chọn file đáp án chuẩn (JSON)",
             filetypes=[("Tệp JSON", "*.json"), ("Tất cả", "*.*")],
@@ -769,7 +769,7 @@ class SimpleOMRApp(tk.Tk):
             self._set_status(f"Lỗi nạp đáp án chuẩn: {exc}", is_error=True)
 
     def on_manual_key(self):
-        """Mở cửa sổ nhập đáp án chuẩn thủ công cho 50 câu."""
+
         dlg = ManualAnswerKeyDialog(
             parent=self,
             initial_answers=self.answer_key,
@@ -778,7 +778,7 @@ class SimpleOMRApp(tk.Tk):
         return dlg
 
     def on_export_key_json(self):
-        """Xuất bộ đáp án chuẩn đang sử dụng ra file JSON."""
+
         if not self.answer_key:
             messagebox.showwarning(
                 "Chưa có đáp án chuẩn",
@@ -790,7 +790,7 @@ class SimpleOMRApp(tk.Tk):
         self._export_key_to_json_file(self.answer_key, parent_widget=self)
 
     def _export_key_to_json_file(self, answers: list[str], parent_widget=None) -> Path | None:
-        """Lưu bộ 50 đáp án chuẩn ra file JSON theo đúng cấu trúc chuẩn của hệ thống."""
+
         v_res = validate_answer_key(answers)
         if not v_res["valid"]:
             missing = v_res["missing_indices"]
@@ -830,7 +830,7 @@ class SimpleOMRApp(tk.Tk):
             return None
 
     def _apply_new_answer_key(self, key: list[str], source_name: str):
-        """Đồng bộ bộ đáp án chuẩn mới: lưu bản sao, xóa điểm cũ, yêu cầu bấm chấm lại."""
+
         self.answer_key = list(key)
         self.lbl_key_status.configure(
             text=f"✓ Đáp án: {source_name}",
@@ -862,7 +862,7 @@ class SimpleOMRApp(tk.Tk):
             self._set_status(f"Đã nạp đáp án chuẩn: {source_name}.")
 
     def on_score(self):
-        """4. Chấm điểm học sinh dựa trên đáp án chuẩn."""
+
         if not self.student_answers or not self.answer_key:
             messagebox.showinfo("Thông báo", "Cần đọc phiếu và nạp đáp án chuẩn trước khi chấm điểm.", parent=self)
             return
@@ -895,7 +895,7 @@ class SimpleOMRApp(tk.Tk):
             self._set_status(f"Lỗi chấm điểm: {exc}", is_error=True)
 
     def on_export_excel(self):
-        """5. Xuất kết quả ra file Excel (Chế độ 1 hoặc Chế độ 2)."""
+
         if not self.student_answers:
             messagebox.showwarning("Cảnh báo", "Chưa có kết quả để xuất. Hãy đọc phiếu trước.", parent=self)
             return
@@ -935,7 +935,7 @@ class SimpleOMRApp(tk.Tk):
 
 
     def _update_table_unscored(self):
-        """Cập nhật bảng 50 câu khi chưa chấm điểm."""
+
         self._clear_table()
         if not self.student_answers:
             return
@@ -952,7 +952,7 @@ class SimpleOMRApp(tk.Tk):
             self.tree.insert("", "end", values=(i, ans, "--", status), tags=(tag,))
 
     def _update_table_scored(self):
-        """Cập nhật bảng 50 câu sau khi chấm điểm: Tô màu cả dòng."""
+
         self._clear_table()
         if not self.score_result:
             return
@@ -974,7 +974,7 @@ class SimpleOMRApp(tk.Tk):
             self.tree.insert("", "end", values=(q, stu, cor, res_text), tags=(tag,))
 
     def _update_stat_chips(self, correct, wrong, blank, multi, is_reset: bool = False):
-        """Cập nhật các số liệu trên 4 ô pastel."""
+
         if is_reset:
             self.chip_correct.configure(text="--")
             self.chip_wrong.configure(text="--")
@@ -987,19 +987,19 @@ class SimpleOMRApp(tk.Tk):
             self.chip_multi.configure(text="--" if multi is None or multi == "--" else str(multi))
 
     def _clear_table(self):
-        """Xóa toàn bộ dòng trong bảng."""
+
         for item in self.tree.get_children():
             self.tree.delete(item)
 
     def _on_canvas_resize(self, event):
-        """Tự động căn chỉnh ảnh khi khung Canvas đổi kích thước."""
+
         if self.display_image is not None:
             self._render_image(self.display_image)
         else:
             self._draw_placeholder()
 
     def _render_image(self, bgr_img: np.ndarray):
-        """Hiển thị ảnh căn giữa trong Canvas giữ đúng tỷ lệ."""
+
         if not _HAS_PIL:
             self.canvas.delete("all")
             self.canvas.create_text(
@@ -1024,7 +1024,7 @@ class SimpleOMRApp(tk.Tk):
 
 
 def launch_simple_app():
-    """Khởi chạy ứng dụng OMR đơn giản."""
+
     app = SimpleOMRApp()
     app.mainloop()
 

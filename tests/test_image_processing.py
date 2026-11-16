@@ -1,4 +1,4 @@
-"""Kiểm thử tiền xử lý ảnh: đọc ảnh, giữ tỷ lệ, nhị phân hóa và thông báo lỗi."""
+
 
 import tempfile
 import unittest

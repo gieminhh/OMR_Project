@@ -1,4 +1,4 @@
-"""Đọc/ghi đường dẫn Unicode và tiền xử lý ảnh bằng OpenCV."""
+
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,7 +16,7 @@ DEFAULT_THRESHOLD_C = 12.0
 
 @dataclass(frozen=True)
 class PreprocessConfig:
-    """Các tham số có thể hiệu chỉnh mà không thay thuật toán."""
+
 
     max_dimension: int = DEFAULT_MAX_DIMENSION
     blur_kernel: int = DEFAULT_BLUR_KERNEL
@@ -28,7 +28,7 @@ class PreprocessConfig:
 
 @dataclass
 class PreprocessedImage:
-    """Ảnh trung gian cùng hệ tọa độ; binary dùng mực trắng, nền đen."""
+
 
     original: np.ndarray
     resized: np.ndarray
@@ -38,7 +38,7 @@ class PreprocessedImage:
 
 
 def validate_image(image: np.ndarray) -> None:
-    """Yêu cầu ảnh uint8 không rỗng, grayscale/BGR/BGRA."""
+
     if not isinstance(image, np.ndarray) or image.size == 0:
         raise ImageProcessingError("Ảnh rỗng hoặc dữ liệu không phải numpy array.")
     if image.dtype != np.uint8 or image.ndim not in (2, 3):
@@ -50,7 +50,7 @@ def validate_image(image: np.ndarray) -> None:
 
 
 def load_image(path: str | Path) -> np.ndarray:
-    """Đọc ảnh BGR, hỗ trợ tên tệp tiếng Việt trên Windows."""
+
     path = Path(path)
     if not path.is_file():
         raise ImageProcessingError(f"Ảnh không tồn tại hoặc không phải tệp: {path}")
@@ -66,7 +66,7 @@ def load_image(path: str | Path) -> np.ndarray:
 
 
 def save_image(path: str | Path, image: np.ndarray) -> Path:
-    """Lưu ảnh Unicode, tạo thư mục cha và báo rõ lỗi ghi."""
+
     validate_image(image)
     path = Path(path)
     try:
@@ -81,7 +81,7 @@ def save_image(path: str | Path, image: np.ndarray) -> Path:
 
 
 def resize_image(image: np.ndarray, max_dimension: int = DEFAULT_MAX_DIMENSION) -> np.ndarray:
-    """Giảm kích thước khi cần, giữ tỷ lệ và không phóng lớn ảnh."""
+
     validate_image(image)
     if not isinstance(max_dimension, int) or max_dimension < 3:
         raise ImageProcessingError("max_dimension phải là số nguyên >= 3.")
@@ -95,12 +95,12 @@ def resize_image(image: np.ndarray, max_dimension: int = DEFAULT_MAX_DIMENSION) 
 
 
 def to_grayscale(image: np.ndarray) -> np.ndarray:
-    """Chuyển grayscale/BGR/BGRA thành một kênh (cv2.cvtColor).
-    
-    Thuật toán:
-      - Loại bỏ thông tin màu sắc không cần thiết, chỉ giữ lại độ sáng (luminance).
-      - Giúp giảm dung lượng bộ nhớ (từ 3 kênh xuống 1 kênh) và tăng tốc độ xử lý.
-    """
+
+
+
+
+
+
     validate_image(image)
     if image.ndim == 2:
         return image.copy()
@@ -109,12 +109,12 @@ def to_grayscale(image: np.ndarray) -> np.ndarray:
 
 
 def apply_blur(gray: np.ndarray, kernel_size: int = DEFAULT_BLUR_KERNEL) -> np.ndarray:
-    """Gaussian blur nhẹ để giảm nhiễu trước khi nhị phân hóa (cv2.GaussianBlur).
-    
-    Thuật toán:
-      - Áp dụng bộ lọc Gaussian làm mịn ảnh, giảm nhiễu hạt (noise) từ camera.
-      - Giúp bước phát hiện biên Canny hoặc ngưỡng Threshold đạt độ chính xác cao hơn.
-    """
+
+
+
+
+
+
     gray = to_grayscale(gray)
     if not isinstance(kernel_size, int) or kernel_size < 1 or kernel_size % 2 == 0:
         raise ImageProcessingError("Kích thước Gaussian kernel phải là số lẻ dương.")
@@ -127,13 +127,13 @@ def apply_threshold(
     block_size: int = DEFAULT_BLOCK_SIZE,
     c: float = DEFAULT_THRESHOLD_C,
 ) -> np.ndarray:
-    """Nhị phân đảo: pixel mực là 255 (trắng), nền giấy là 0 (đen).
-    
-    Thuật toán:
-      - Adaptive Threshold: Tính ngưỡng cục bộ cho từng vùng ảnh (block_size x block_size).
-        Rất hiệu quả khi ảnh chụp có bóng đổ, ánh sáng không đồng đều.
-      - Otsu Threshold: Tự động tìm ngưỡng tối ưu phân tách 2 đỉnh phân bố màu (bimodal).
-    """
+
+
+
+
+
+
+
     gray = to_grayscale(gray)
     if method == "otsu":
         return cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
@@ -151,15 +151,15 @@ def apply_threshold(
 def preprocess_image(
     image: np.ndarray, config: PreprocessConfig | None = None
 ) -> PreprocessedImage:
-    """Chuỗi tiền xử lý chuẩn: Resize → Grayscale → Gaussian Blur → Threshold nhị phân.
-    
-    Quy trình:
-      1. Resize ảnh về kích thước tối đa hợp lý để đồng bộ độ phân giải.
-      2. Chuyển ảnh xám (Grayscale).
-      3. Làm mờ giảm nhiễu (Gaussian Blur).
-      4. Phân ngưỡng nhị phân (Thresholding - pixel mực = 255, nền giấy = 0).
-      5. Áp dụng biến đổi hình thái học Morphology Open (tùy chọn) để khử nhiễu li ti.
-    """
+
+
+
+
+
+
+
+
+
     config = config or PreprocessConfig()
     resized = resize_image(image, config.max_dimension)
     gray = to_grayscale(resized)

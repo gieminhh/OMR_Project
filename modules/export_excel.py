@@ -1,4 +1,4 @@
-"""Xuất kết quả nhận diện và chấm điểm ra file Excel."""
+
 
 from pathlib import Path
 
@@ -14,7 +14,7 @@ except ImportError:
 
 
 class ExportError(OMRError):
-    """Lỗi khi xuất file Excel."""
+    pass
 
 
 
@@ -32,24 +32,24 @@ def export_excel(
     *,
     answers: list[str] | None = None,
 ) -> Path:
-    """Xuất 50 câu và thống kê ra file .xlsx.
 
-    Hỗ trợ 2 chế độ:
-      - Chế độ 1 (Chỉ đọc kết quả): Khi chưa có đáp án chuẩn (score_result=None,
-        chỉ có answers hoặc truyền dict chứa answers từ process_omr).
-      - Chế độ 2 (Chấm điểm): Khi có score_result từ score_answers().
 
-    Args:
-        score_result: dict từ score_answers() hoặc process_omr(), hoặc None nếu truyền qua `answers`.
-        output_path: đường dẫn file .xlsx sẽ ghi (tạo thư mục cha nếu thiếu).
-        answers: danh sách 50 đáp án học sinh (tùy chọn khi xuất chế độ 1).
 
-    Returns:
-        Path thực tế đã ghi.
 
-    Raises:
-        ExportError: nếu thiếu openpyxl, dữ liệu không hợp lệ hoặc lỗi ghi file.
-    """
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     if not _HAS_OPENPYXL:
         raise ExportError(
             "Thư viện openpyxl chưa cài. Chạy: pip install openpyxl"
@@ -249,5 +249,5 @@ def export_excel(
 
 
 def export_unscored_excel(answers: list[str], output_path: str | Path) -> Path:
-    """Xuất kết quả nhận diện 50 câu khi chưa có đáp án chuẩn (Chế độ 1)."""
+
     return export_excel(None, output_path, answers=answers)

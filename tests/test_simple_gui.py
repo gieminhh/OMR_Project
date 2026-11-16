@@ -1,4 +1,4 @@
-"""Kiểm thử tự động cho Giao diện OMR Tkinter và Quản lý Đáp án chuẩn."""
+
 
 import json
 import tempfile
@@ -27,7 +27,7 @@ class SimpleGuiTests(unittest.TestCase):
             self.app.destroy()
 
     def test_initial_state(self):
-        """Kiểm tra trạng thái ban đầu của giao diện."""
+
         self.assertIsNone(self.app.image_path)
         self.assertIsNone(self.app.student_answers)
         self.assertIsNone(self.app.answer_key)
@@ -42,7 +42,7 @@ class SimpleGuiTests(unittest.TestCase):
         self.assertEqual(self.app.chip_multi.cget("text"), "--")
 
     def test_scan_and_unscored_table_and_export(self):
-        """Đọc phiếu thành công cập nhật bảng 50 câu và cho phép xuất Excel Chế độ 1."""
+
         sample_img = ROOT / "test_images" / "sample_photo.png"
         self.app.image_path = sample_img
         self.app.on_scan_sheet()
@@ -71,7 +71,7 @@ class SimpleGuiTests(unittest.TestCase):
             self.assertEqual(wb.active["B1"].value, "Đáp án nhận diện")
 
     def test_load_key_and_scoring(self):
-        """Nạp đáp án chuẩn và chấm điểm thành công."""
+
         self.app.student_answers = ["A"] * 50
         self.app.answer_key = ["A"] * 50
 
@@ -89,7 +89,7 @@ class SimpleGuiTests(unittest.TestCase):
         self.assertEqual(self.app.chip_multi.cget("text"), "0")
 
     def test_changing_answer_key_updates_score(self):
-        """Thay đổi đáp án chuẩn sau khi đã chấm phải tính lại điểm, không giữ điểm cũ."""
+
         self.app.student_answers = ["A"] * 25 + ["B"] * 25
 
 
@@ -108,7 +108,7 @@ class SimpleGuiTests(unittest.TestCase):
         self.assertEqual(self.app.score_result["score"], 0.0)
 
     def test_treeview_row_tags_colored(self):
-        """Kiểm tra Treeview gán đúng tag màu cho từng trạng thái: correct, wrong, blank, multiple."""
+
 
         self.app.student_answers = ["A", "B", "BLANK", "MULTIPLE"] + ["A"] * 46
         self.app.answer_key = ["A"] * 50
@@ -137,7 +137,7 @@ class SimpleGuiTests(unittest.TestCase):
 
 
     def test_manual_key_save_success(self):
-        """1. Nhập đủ 50 đáp án A/B/C/D rồi lưu thành công."""
+
         dlg = self.app.on_manual_key()
         dlg.withdraw()
         dlg.fill_all("B")
@@ -150,7 +150,7 @@ class SimpleGuiTests(unittest.TestCase):
         self.assertEqual(str(self.app.btn_export_key["state"]), "normal")
 
     def test_manual_key_missing_question_10_rejected(self):
-        """2. Thiếu đáp án ở câu 10 thì không cho lưu và thông báo rõ."""
+
         dlg = self.app.on_manual_key()
         dlg.withdraw()
         dlg.fill_all("A")
@@ -168,7 +168,7 @@ class SimpleGuiTests(unittest.TestCase):
         dlg.destroy()
 
     def test_manual_key_edit_question_25_only(self):
-        """3. Sửa đáp án câu 25 không làm thay đổi các câu khác."""
+
         dlg = self.app.on_manual_key()
         dlg.withdraw()
         dlg.fill_all("A")
@@ -186,7 +186,7 @@ class SimpleGuiTests(unittest.TestCase):
         self.assertEqual(self.app.answer_key[49], "A")
 
     def test_manual_key_cancel_preserves_current_key(self):
-        """4. Nhấn Hủy không làm thay đổi bộ đáp án chuẩn đang sử dụng."""
+
         self.app.answer_key = ["D"] * 50
         dlg = self.app.on_manual_key()
         dlg.withdraw()
@@ -197,7 +197,7 @@ class SimpleGuiTests(unittest.TestCase):
         self.assertEqual(self.app.answer_key, ["D"] * 50)
 
     def test_manual_key_prefills_loaded_json(self):
-        """5. Nạp JSON rồi mở cửa sổ thủ công thì hiện đúng các đáp án đã nạp."""
+
         key_file = ROOT / "answer_key" / "answer_key.json"
         expected = load_answer_key(key_file)
         self.app._apply_new_answer_key(expected, "test.json")
@@ -210,7 +210,7 @@ class SimpleGuiTests(unittest.TestCase):
         dlg.destroy()
 
     def test_manual_key_export_json_and_reload(self):
-        """6. Nhập thủ công, lưu vào app, rồi xuất JSON từ giao diện chính, nạp lại đối chiếu khớp 50 câu."""
+
         dlg = self.app.on_manual_key()
         dlg.withdraw()
         sample_answers = (["A", "B", "C", "D"] * 12) + ["A", "B"]
@@ -230,7 +230,7 @@ class SimpleGuiTests(unittest.TestCase):
             self.assertEqual(reloaded, sample_answers)
 
     def test_export_key_json_without_key_shows_warning(self):
-        """Kiểm tra khi chưa có đáp án chuẩn, bấm Xuất JSON trên giao diện chính phải cảnh báo rõ."""
+
         self.app.answer_key = None
         with patch("tkinter.messagebox.showwarning") as mock_warn:
             with patch("tkinter.filedialog.asksaveasfilename") as mock_file:
@@ -239,7 +239,7 @@ class SimpleGuiTests(unittest.TestCase):
                 mock_file.assert_not_called()
 
     def test_dialog_has_only_save_and_cancel_buttons(self):
-        """Cửa sổ nhập thủ công chỉ có 2 nút hành động: 'Lưu & sử dụng' và 'Hủy', không có 'Xuất JSON'."""
+
         dlg = self.app.on_manual_key()
         dlg.withdraw()
         self.assertFalse(hasattr(dlg, "on_export_json"))
@@ -247,7 +247,7 @@ class SimpleGuiTests(unittest.TestCase):
         dlg.destroy()
 
     def test_manual_and_json_scoring_identical(self):
-        """7. Chấm điểm bằng đáp án thủ công và đáp án JSON giống nhau thì kết quả phải giống nhau."""
+
         student = (["A", "B", "C", "D"] * 12) + ["BLANK", "MULTIPLE"]
         key_list = ["A"] * 50
 
@@ -266,7 +266,7 @@ class SimpleGuiTests(unittest.TestCase):
         self.assertEqual(self.app.score_result["multiple_count"], res_direct["multiple_count"])
 
     def test_changing_answer_key_invalidates_old_score(self):
-        """8. Đổi đáp án chuẩn sau khi chấm: Xóa điểm cũ, yêu cầu bấm chấm lại, không giữ điểm cũ."""
+
         self.app.student_answers = ["A"] * 50
         self.app.answer_key = ["A"] * 50
         self.app.on_score()

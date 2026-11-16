@@ -1,4 +1,4 @@
-"""Kiểm tra đọc đáp án chuẩn, xác thực đáp án và tính điểm."""
+
 
 import json
 import tempfile
@@ -58,7 +58,7 @@ class ScoringTests(unittest.TestCase):
             score_answers(["A"], ["A"])
 
     def test_rescore_when_answer_key_changes(self) -> None:
-        """Thay đổi đáp án chuẩn sau khi chấm phải tính lại điểm chính xác."""
+
         student = ["A"] * 25 + ["B"] * 25
         key_1 = ["A"] * 50
         key_2 = ["B"] * 50
@@ -81,7 +81,7 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(res_4["wrong_count"], 50)
 
     def test_all_blank_and_all_multiple_scoring(self) -> None:
-        """Phiếu toàn BLANK hoặc toàn MULTIPLE đạt 0 điểm."""
+
         key = ["A"] * 50
         blanks = ["BLANK"] * 50
         multiples = ["MULTIPLE"] * 50
@@ -97,12 +97,12 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(res_multi["correct_count"], 0)
 
     def test_missing_answer_key_file(self) -> None:
-        """Thiếu file đáp án chuẩn báo ScoringError."""
+
         with self.assertRaises(ScoringError):
             load_answer_key("non_existent_key_path.json")
 
     def test_invalid_character_in_answer_key(self) -> None:
-        """Đáp án chuẩn chứa ký tự lạ (E, X...) bị từ chối."""
+
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "bad_key.json"
             bad_key = ["A"] * 49 + ["E"]
@@ -111,7 +111,7 @@ class ScoringTests(unittest.TestCase):
                 load_answer_key(path)
 
     def test_score_answers_rejects_invalid_student_answer(self) -> None:
-        """score_answers từ chối đáp án học sinh không hợp lệ (E, X...), không tự tính thành điểm."""
+
         key = ["A"] * 50
         with self.assertRaises(ScoringError):
             score_answers(["A"] * 49 + ["E"], key)
@@ -121,7 +121,7 @@ class ScoringTests(unittest.TestCase):
             score_answers(["A"] * 49 + [""], key)
 
     def test_score_answers_rejects_invalid_correct_answer(self) -> None:
-        """score_answers từ chối đáp án chuẩn không thuộc {A, B, C, D}."""
+
         student = ["A"] * 50
         with self.assertRaises(ScoringError):
             score_answers(student, ["A"] * 49 + ["BLANK"])
@@ -129,7 +129,7 @@ class ScoringTests(unittest.TestCase):
             score_answers(student, ["A"] * 49 + ["E"])
 
     def test_score_answers_rejects_non_list(self) -> None:
-        """score_answers từ chối dữ liệu không phải dạng list."""
+
         with self.assertRaises(ScoringError):
             score_answers("A" * 50, ["A"] * 50)  # type: ignore
 

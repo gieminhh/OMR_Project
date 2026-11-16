@@ -1,8 +1,8 @@
-"""Định vị mẫu in 50 câu có hai dãy ô vuông đen giữa hai cột.
 
-Chỉ nhận mẫu có 6 cặp mốc (5 nhóm, mỗi nhóm 5 câu) và hai mốc ngoài
-ở đầu bảng. Không dùng ô đã tô để suy ra layout hoặc đáp án.
-"""
+
+
+
+
 
 from dataclasses import replace
 import json
@@ -19,11 +19,11 @@ PROFILE_PATH = Path(__file__).resolve().parents[1] / "config" / "printed_50.json
 
 
 def detect_printed_layout(image: np.ndarray) -> AnswerConfig | None:
-    """Trả layout theo mốc in hoặc None khi không có dấu hiệu mẫu này.
 
-    Nếu đã thấy hai dãy mốc nhưng thiếu/lệch mốc, báo lỗi thay vì đoán vị trí.
-    Tọa độ và tỷ lệ riêng của mẫu được đặt trong config/printed_50.json.
-    """
+
+
+
+
     try:
         profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:

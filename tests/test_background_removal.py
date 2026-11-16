@@ -1,4 +1,4 @@
-"""Kiểm tra chức năng tách nền và nắn phẳng phiếu OMR."""
+
 
 import unittest
 from pathlib import Path
@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class BackgroundRemovalTests(unittest.TestCase):
     def test_paper_only_and_original_unchanged(self):
-        """Tách nền thành công trả về ảnh kích thước chuẩn 1400x1000 và không đổi ảnh gốc."""
+
         image = load_image(ROOT / "test_images" / "sample_photo.png")
         original = image.copy()
         cleaned = remove_background(image)
@@ -23,7 +23,7 @@ class BackgroundRemovalTests(unittest.TestCase):
         np.testing.assert_array_equal(original, image)
 
     def test_no_paper_reports_error(self):
-        """Ảnh đen toàn bộ không có giấy phải báo PaperDetectionError."""
+
         with self.assertRaises(PaperDetectionError):
             remove_background(np.zeros((500, 500, 3), np.uint8))
 

@@ -1,4 +1,4 @@
-"""Đọc đáp án chuẩn và chấm điểm 50 câu trắc nghiệm."""
+
 
 import json
 from pathlib import Path
@@ -11,17 +11,17 @@ QUESTION_COUNT = 50
 
 
 class ScoringError(OMRError):
-    """Đáp án chuẩn không hợp lệ hoặc không khớp số câu."""
+    pass
 
 
 def load_answer_key(path: str | Path) -> list[str]:
-    """Đọc file JSON đáp án chuẩn; từ chối nếu thiếu câu hoặc giá trị lạ.
 
-    Định dạng file:
-        {"answers": ["A", "B", "C", ...]}   # đúng 50 phần tử
-    hoặc đơn giản hơn:
-        ["A", "B", "C", ...]                # list thuần
-    """
+
+
+
+
+
+
     path = Path(path)
     if not path.is_file():
         raise ScoringError(f"File đáp án chuẩn không tồn tại: {path}")
@@ -54,26 +54,26 @@ def load_answer_key(path: str | Path) -> list[str]:
 
 
 def score_answers(student_answers: list[str], correct_answers: list[str]) -> dict:
-    """So sánh từng câu và trả thống kê + điểm thang 10.
 
-    Returns:
-        {
-          "score": float,          # thang 10, làm tròn 2 chữ số
-          "correct_count": int,
-          "wrong_count": int,
-          "blank_count": int,
-          "multiple_count": int,
-          "total": int,
-          "details": [             # list 50 phần tử
-            {
-              "question": int,
-              "student": str,      # A/B/C/D/BLANK/MULTIPLE
-              "correct": str,      # A/B/C/D
-              "result": str        # "correct" | "wrong" | "blank" | "multiple"
-            }, ...
-          ]
-        }
-    """
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     if not isinstance(student_answers, list) or not isinstance(correct_answers, list):
         raise ScoringError("Danh sách đáp án học sinh và đáp án chuẩn phải là dạng list.")
     if len(student_answers) != QUESTION_COUNT or len(correct_answers) != QUESTION_COUNT:

@@ -1,4 +1,4 @@
-"""Hồi quy trên ảnh thật người dùng gửi: không lấy đáp án kỳ vọng từ detector."""
+
 
 import tempfile
 import unittest

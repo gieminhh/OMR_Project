@@ -1,4 +1,4 @@
-"""CLI nhận diện và điều phối xử lý phiếu trắc nghiệm OMR."""
+
 
 
 import argparse
@@ -31,14 +31,14 @@ def process_omr(
     phase: int = 4,
     already_warped: bool = False,
 ) -> dict:
-    """Chạy các bước hiện có; mặc định đọc 50 câu, chưa chấm điểm.
 
-    phase=2/3 dừng sau tiền xử lý/warp. already_warped=True chỉ dùng cho
-    ảnh đã căn thẳng đúng kích thước config, không âm thầm đoán góc thiếu.
-    Các lỗi dự kiến được chuyển cho caller xử lý qua OMRError.
-    layout_path=None tự nhận mẫu in có mốc đen; đường dẫn cụ thể dùng đúng
-    layout được chỉ định, không tự thay bằng mẫu khác.
-    """
+
+
+
+
+
+
+
     if phase not in (2, 3, 4):
         raise OMRError("Phase kiểm thử chỉ nhận 2, 3 hoặc 4.")
     output_dir = Path(output_dir)
@@ -92,7 +92,7 @@ def process_omr(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI đọc và nhận diện phiếu trắc nghiệm OMR."""
+
     parser = argparse.ArgumentParser(description="Hệ thống đọc và nhận diện phiếu trắc nghiệm OMR 50 câu.")
     parser.add_argument("image", nargs="?", type=Path, help="Đường dẫn ảnh phiếu")
     parser.add_argument("--phase", type=int, choices=(2, 3, 4), default=4, help="Mức độ xử lý: 2 (tiền xử lý), 3 (căn phẳng), 4 (nhận diện)")

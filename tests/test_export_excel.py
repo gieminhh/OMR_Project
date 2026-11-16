@@ -1,4 +1,4 @@
-"""Kiểm tra tệp Excel được tạo từ kết quả chấm điểm."""
+
 
 import tempfile
 import unittest
@@ -33,7 +33,7 @@ class ExportExcelTests(unittest.TestCase):
                 export_excel({}, Path(folder) / "result.xlsx")
 
     def test_exports_unscored_mode_1_without_answer_key(self) -> None:
-        """Chế độ 1: Xuất Excel khi chưa chấm điểm, không tự sinh điểm số."""
+
         answers = ["A"] * 48 + ["BLANK", "MULTIPLE"]
         with tempfile.TemporaryDirectory() as folder:
             output = export_excel(None, Path(folder) / "unscored.xlsx", answers=answers)
@@ -65,7 +65,7 @@ class ExportExcelTests(unittest.TestCase):
         self.assertEqual(sheet["B56"].value, 1)
 
     def test_exports_unscored_from_dict_and_list(self) -> None:
-        """Xuất từ dict (process_omr format) hoặc list thuần."""
+
         answers = ["B"] * 50
         with tempfile.TemporaryDirectory() as folder:
 
@@ -79,13 +79,13 @@ class ExportExcelTests(unittest.TestCase):
             self.assertEqual(wb2.active["B2"].value, "B")
 
     def test_rejects_invalid_answer_count_for_unscored(self) -> None:
-        """Chế độ 1 từ chối dữ liệu không đủ 50 câu."""
+
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaises(OMRError):
                 export_excel(["A"] * 25, Path(folder) / "bad.xlsx")
 
     def test_multiple_color_is_orange(self) -> None:
-        """Đồng bộ màu MULTIPLE ở Excel thành màu cam nhạt FFE5D0 giống Tkinter."""
+
         student = ["A"] * 49 + ["MULTIPLE"]
         key = ["A"] * 50
         result = score_answers(student, key)

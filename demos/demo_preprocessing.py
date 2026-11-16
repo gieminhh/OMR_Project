@@ -1,19 +1,19 @@
-"""Minh họa từng bước tiền xử lý ảnh và căn chỉnh phiếu OMR.
 
-Các bước thực hiện và minh họa:
-  1. Đọc ảnh và kiểm tra hợp lệ (cv2.imdecode / load_image).
-  2. Resize ảnh giữ nguyên tỷ lệ (cv2.resize / resize_image).
-  3. Chuyển ảnh xám Grayscale (cv2.cvtColor / to_grayscale).
-  4. Làm mờ giảm nhiễu (cv2.GaussianBlur / apply_blur).
-  5. Tách biên Canny (cv2.Canny).
-  6. Tìm contour và xấp xỉ 4 góc tứ giác (cv2.findContours, cv2.approxPolyDP, order_points).
-  7. Căn chỉnh phối cảnh Perspective Transform (cv2.getPerspectiveTransform, cv2.warpPerspective).
 
-Chạy demo:
-    python demos/demo_preprocessing.py
-    python demos/demo_preprocessing.py test_images/sample_photo.png
-    python demos/demo_preprocessing.py test_images/printed_50_real.png
-"""
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import sys
 from pathlib import Path
@@ -45,7 +45,7 @@ def run_demo_preprocessing(
     image_path: str | Path | None = None,
     output_dir: str | Path | None = None,
 ) -> dict:
-    """Chạy toàn bộ quy trình tiền xử lý và lưu từng ảnh trung gian."""
+
     if image_path is None:
         image_path = ROOT / "test_images" / "sample_photo.png"
     image_path = Path(image_path)

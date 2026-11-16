@@ -1,8 +1,8 @@
-"""Tạo fixture hình học độc lập với thuật toán và cấu hình detector.
 
-Chạy từ OMR_Project: python -m scripts.generate_samples
-Đây là ảnh tổng hợp để phát triển, không thay thế kiểm thử ảnh chụp thật.
-"""
+
+
+
+
 
 import json
 from pathlib import Path
@@ -17,7 +17,7 @@ SAMPLE_CORNERS = np.array([[160, 100], [1130, 170], [1200, 1580], [90, 1500]], n
 
 
 def make_sheet(answers: list[str] | None = None) -> np.ndarray:
-    """Phiếu mẫu hai cột, 25 hàng mỗi cột; không đọc config detector."""
+
     answers = answers if answers is not None else ["ABCD"[i % 4] for i in range(50)]
     if len(answers) != 50:
         raise ValueError("Fixture cần đúng 50 đáp án.")
@@ -40,7 +40,7 @@ def make_sheet(answers: list[str] | None = None) -> np.ndarray:
 
 
 def photograph(sheet: np.ndarray, corners: np.ndarray = SAMPLE_CORNERS) -> np.ndarray:
-    """Chiếu phiếu lên nền xám để mô phỏng ảnh chụp nghiêng."""
+
     height, width = sheet.shape[:2]
     source = np.array([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], np.float32)
     transform = cv2.getPerspectiveTransform(source, np.asarray(corners, np.float32))
@@ -48,7 +48,7 @@ def photograph(sheet: np.ndarray, corners: np.ndarray = SAMPLE_CORNERS) -> np.nd
 
 
 def generate_samples(output: Path = ROOT / "test_images") -> None:
-    """Ghi ảnh sạch, nghiêng, ánh sáng không đều và dữ liệu kỳ vọng."""
+
     answers = ["ABCD"[i % 4] for i in range(50)]
     sheet = make_sheet(answers)
     photo = photograph(sheet)

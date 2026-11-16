@@ -1,4 +1,4 @@
-"""Kiểm tra tính hợp lệ của danh sách đáp án học sinh và đáp án chuẩn."""
+
 
 from .errors import OMRError
 
@@ -8,21 +8,21 @@ QUESTION_COUNT = 50
 
 
 class ValidationError(OMRError):
-    """Danh sách đáp án không hợp lệ."""
+    pass
 
 
 def validate_answers(answers: list[str]) -> dict:
-    """Kiểm tra số câu và tập giá trị A/B/C/D/BLANK/MULTIPLE của học sinh.
 
-    Returns:
-        {
-          "valid": bool,
-          "count": int,
-          "blank_count": int,
-          "multiple_count": int,
-          "errors": list[str]
-        }
-    """
+
+
+
+
+
+
+
+
+
+
     errors = []
     blank_count = multiple_count = 0
 
@@ -50,16 +50,16 @@ def validate_answers(answers: list[str]) -> dict:
 
 
 def validate_answer_key(key: list[str]) -> dict:
-    """Kiểm tra tính hợp lệ của bộ đáp án chuẩn (đúng 50 câu, chỉ gồm A, B, C, D).
 
-    Returns:
-        {
-          "valid": bool,
-          "count": int,
-          "missing_indices": list[int],
-          "errors": list[str]
-        }
-    """
+
+
+
+
+
+
+
+
+
     errors = []
     missing_indices = []
 

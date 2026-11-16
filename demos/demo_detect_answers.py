@@ -1,19 +1,19 @@
-"""Minh họa từng bước nhận diện 50 đáp án trắc nghiệm.
 
-Các bước thực hiện và minh họa:
-  1. Nhận ảnh phiếu đã căn phẳng (1000x1400 px).
-  2. Xác định cấu hình layout (tự động nhận diện mốc in printed_50 hoặc layout mẫu).
-  3. Xác định tọa độ 50 câu (chia 2 cột x 25 câu, mỗi câu 4 ô A/B/C/D).
-  4. Nhị phân hóa vùng đáp án (Adaptive Thresholding).
-  5. Đếm số pixel mực trong lòng từng ô bằng np.count_nonzero.
-  6. Phân loại trạng thái: A, B, C, D, BLANK (bỏ trống), MULTIPLE (tô nhiều).
-  7. Đánh dấu các ô đáp án lên ảnh và in kết quả 50 câu ra terminal.
 
-Chạy demo:
-    python demos/demo_detect_answers.py
-    python demos/demo_detect_answers.py test_images/sample_photo.png
-    python demos/demo_detect_answers.py test_images/printed_50_real.png
-"""
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 import sys
 from pathlib import Path
@@ -36,7 +36,7 @@ def run_demo_detect_answers(
     image_path: str | Path | None = None,
     output_dir: str | Path | None = None,
 ) -> dict:
-    """Chạy nhận diện 50 đáp án và xuất ảnh minh họa."""
+
     if image_path is None:
         image_path = ROOT / "test_images" / "sample_photo.png"
     image_path = Path(image_path)

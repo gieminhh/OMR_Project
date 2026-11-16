@@ -1,4 +1,4 @@
-"""Kiểm thử nhận diện đáp án: kiểm tra 5, 10 và 50 câu với dữ liệu kỳ vọng độc lập."""
+
 
 import tempfile
 import unittest
